@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import { supabase } from '../supabaseClient';
-import { useAuthContext } from '../contexts/AuthContext';
 
 const EnhancedSignup = () => {
   const [email, setEmail] = useState('');
