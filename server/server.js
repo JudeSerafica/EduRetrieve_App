@@ -22,18 +22,19 @@ const genAI = new GoogleGenerativeAI({
 });
 console.log('🔍 Gemini client initialized. API key set?', apiKey && apiKey !== 'dummy-key');
 
-// Google OAuth2 Client Setup - FIXED REDIRECT URI
+// Google OAuth2 Client Setup - Dynamic redirect URI
+const redirectUri = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/auth/callback` : 'http://localhost:3000/auth/callback';
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  'http://localhost:3000/auth/callback' // Make sure this matches your Google Console
+  redirectUri
 );
 
 // Add this logging to debug the OAuth configuration
 console.log('🔐 OAuth Configuration:');
 console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Missing');
 console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'Missing');
-console.log('Redirect URI: http://localhost:3000/auth/callback');
+console.log('Redirect URI:', redirectUri);
 
 // =========================
 // 🔧 Middleware
@@ -141,12 +142,9 @@ const authenticateToken = async (req, res, next) => {
 app.post('/api/auth/google/signup', async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
+  if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
-    // Generate authorization URL with proper redirect_uri
     const authUrl = googleClient.generateAuthUrl({
       access_type: 'offline',
       scope: [
@@ -154,20 +152,12 @@ app.post('/api/auth/google/signup', async (req, res) => {
         'https://www.googleapis.com/auth/userinfo.profile'
       ],
       state: JSON.stringify({ email, action: 'signup' }),
-      prompt: 'consent',
-      redirect_uri: 'http://localhost:3000/auth/callback' // Explicit redirect URI
+      prompt: 'consent'
     });
 
-    console.log('🔗 Generated auth URL for:', email);
-    console.log('🔗 Full auth URL:', authUrl);
-    
-    res.status(200).json({
-      message: 'Redirect to Google for authorization',
-      authUrl,
-      email
-    });
+    res.status(200).json({ message: 'Redirect to Google', authUrl, email });
   } catch (error) {
-    console.error('❌ Google OAuth URL generation error:', error);
+    console.error('Google OAuth signup error:', error);
     res.status(500).json({ error: 'Failed to generate Google auth URL' });
   }
 });
@@ -176,114 +166,39 @@ app.post('/api/auth/google/signup', async (req, res) => {
 app.post('/api/auth/google/callback', async (req, res) => {
   const { code, state } = req.body;
 
-  console.log('🔄 OAuth Callback received:', {
-    hasCode: !!code,
-    hasState: !!state,
-    codeLength: code ? code.length : 0,
-    stateContent: state ? state.substring(0, 100) + '...' : 'none'
-  });
+  if (!code || !state)
+    return res.status(400).json({ error: 'Missing authorization code or state' });
 
-  if (!code || !state) {
-    console.error('❌ Missing parameters:', { code: !!code, state: !!state });
-    return res.status(400).json({ 
-      error: 'Missing authorization code or state',
-      details: 'Both code and state parameters are required'
-    });
+  let parsedState;
+  try {
+    parsedState = JSON.parse(state);
+  } catch {
+    return res.status(400).json({ error: 'Invalid state parameter' });
   }
 
+  const { email: originalEmail, action } = parsedState;
+
   try {
-    // Parse state to get original email and action
-    let parsedState;
-    try {
-      parsedState = JSON.parse(state);
-    } catch (parseError) {
-      console.error('❌ State parsing error:', parseError);
-      return res.status(400).json({ 
-        error: 'Invalid state parameter',
-        details: 'Could not parse state JSON'
-      });
-    }
+    // Exchange code for tokens using dynamic redirect URI
+    const tokenResponse = await googleClient.getToken({
+      code,
+      redirect_uri: redirectUri
+    });
+    googleClient.setCredentials(tokenResponse.tokens);
 
-    const { email: originalEmail, action } = parsedState;
-    console.log('📧 Processing callback for email:', originalEmail);
+    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenResponse.tokens.access_token}` }
+    });
+    const googleUserInfo = await response.json();
 
-    if (!originalEmail) {
-      return res.status(400).json({ 
-        error: 'Invalid state: missing email',
-        details: 'State parameter must contain email'
-      });
-    }
+    if (googleUserInfo.email !== originalEmail)
+      return res.status(400).json({ error: 'Email mismatch' });
 
-    // Exchange authorization code for tokens with explicit redirect_uri
-    let tokens;
-    try {
-      const tokenResponse = await googleClient.getToken({
-        code,
-        redirect_uri: 'http://localhost:3000/auth/callback'
-      });
-      tokens = tokenResponse.tokens;
-      console.log('🔑 Token exchange successful');
-    } catch (tokenError) {
-      console.error('❌ Token exchange error:', tokenError);
-      return res.status(400).json({ 
-        error: 'Failed to exchange authorization code',
-        details: tokenError.message
-      });
-    }
+    if (!googleUserInfo.verified_email)
+      return res.status(400).json({ error: 'Google email not verified' });
 
-    googleClient.setCredentials(tokens);
-
-    // Get user info from Google with better error handling
-    let googleUserInfo;
-    try {
-      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Google API responded with status ${response.status}`);
-      }
-
-      googleUserInfo = await response.json();
-      console.log('👤 Google user info retrieved:', {
-        email: googleUserInfo.email,
-        name: googleUserInfo.name,
-        verified: googleUserInfo.verified_email
-      });
-    } catch (fetchError) {
-      console.error('❌ Failed to fetch user info:', fetchError);
-      return res.status(500).json({ 
-        error: 'Failed to fetch user info from Google',
-        details: fetchError.message
-      });
-    }
-    
-    // Verify the email matches
-    if (googleUserInfo.email !== originalEmail) {
-      console.error('❌ Email mismatch:', {
-        expected: originalEmail,
-        received: googleUserInfo.email
-      });
-      return res.status(400).json({
-        error: 'Email mismatch. Please use the same email address.',
-        details: `Expected ${originalEmail}, got ${googleUserInfo.email}`
-      });
-    }
-
-    if (!googleUserInfo.verified_email) {
-      console.error('❌ Google email not verified');
-      return res.status(400).json({
-        error: 'Google email is not verified. Please verify your email with Google first.'
-      });
-    }
-
-    // Generate verification code for our system
+    const expiresAt = Date.now() + 10 * 60 * 1000;
     const verificationCode = generateVerificationCode();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-    // Store verification data temporarily
     verificationCodes.set(originalEmail, {
       code: verificationCode,
       expiresAt,
@@ -293,7 +208,6 @@ app.post('/api/auth/google/callback', async (req, res) => {
 
     console.log('🔐 Verification code generated and stored for:', originalEmail);
 
-    // Send verification email with the code
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
@@ -352,7 +266,6 @@ app.post('/api/auth/google/callback', async (req, res) => {
       googleVerified: true,
       codeExpires: new Date(expiresAt).toISOString()
     });
-
   } catch (error) {
     console.error('❌ Google OAuth callback error:', error);
     console.error('Stack trace:', error.stack);
