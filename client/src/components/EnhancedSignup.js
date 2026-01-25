@@ -123,7 +123,7 @@ const EnhancedSignup = () => {
 
   const handleGoogleSignup = async (e) => {
     e.preventDefault();
-    
+
     if (!email.trim()) {
       setError('Please enter a valid email address');
       return;
@@ -133,9 +133,14 @@ const EnhancedSignup = () => {
     setError('');
     setMessage('');
 
+    console.log('Current origin for redirect:', window.location.origin);
+
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google'
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/signup`
+        }
       });
       if (error) throw error;
       // The page will redirect to Google, then back to the current page
