@@ -1,0 +1,1013 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+import express from 'express';
+import cors from 'cors';
+import nodemailer from 'nodemailer';
+import multer from 'multer';
+import { createClient } from '@supabase/supabase-js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { OAuth2Client } from 'google-auth-library';
+import crypto from 'crypto';
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Initialize Gemini AI (FIXED: force v1 + explicit baseUrl)
+const apiKey = process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY || 'dummy-key';
+const genAI = new GoogleGenerativeAI({
+  apiKey,
+  apiVersion: 'v1',
+  baseUrl: 'https://generativelanguage.googleapis.com'
+});
+console.log('🔍 Gemini client initialized. API key set?', apiKey && apiKey !== 'dummy-key');
+
+// Google OAuth2 Client Setup - FIXED REDIRECT URI
+const googleClient = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  'http://localhost:3000/auth/callback' // Make sure this matches your Google Console
+);
+
+// Add this logging to debug the OAuth configuration
+console.log('🔐 OAuth Configuration:');
+console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Missing');
+console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'Missing');
+console.log('Redirect URI: http://localhost:3000/auth/callback');
+
+// =========================
+// 🔧 Middleware
+// =========================
+app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// =========================
+// 🧭 SUPABASE INIT  
+// =========================
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dcepfndjsmktrfcelvgs.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjZXBmbmRqc21rdHJmY2VsdmdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTAwMDkxNiwiZXhwIjoyMDY2NTc2OTE2fQ.uSduSDirvbRdz5_2ySrVTp_sYPGcg6ddP6_XfMDZZKQ'
+);
+
+// =========================
+// 📧 EMAIL TRANSPORTER SETUP
+// =========================
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER || 'judskie198@gmail.com',
+    pass: process.env.GMAIL_APP_PASSWORD || 'xncqbcovtcstfbon',
+  },
+});
+
+// In-memory storage for verification codes (use Redis in production)
+const verificationCodes = new Map();
+
+// Generate random 6-digit verification code
+const generateVerificationCode = () => {
+  return crypto.randomInt(100000, 999999).toString();
+};
+
+// Generate content using Gemini
+const generateContent = async (prompt, userId = null, retries = 3) => {
+  try {
+    console.log('🤖 Generating content for prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'dummy-key') {
+      console.error('❌ GEMINI_API_KEY is not configured or is dummy-key');
+      throw new Error('Gemini API key is not configured');
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    console.log('🔧 Using Gemini model: gemini-1.5-pro-latest');
+
+    // Add system instruction for Eduretrieve identity
+    const systemInstruction = "You are Eduretrieve, an AI assistant designed for educational content retrieval and analysis. Always start every response by introducing yourself as Eduretrieve. For example, begin with 'Hello, I am Eduretrieve' or 'As Eduretrieve, I can help you with...'. Make sure 'Eduretrieve' is prominently featured in every single response to reinforce your system-based identity.\n\n";
+    const enhancedPrompt = systemInstruction + prompt;
+
+    const result = await model.generateContent(enhancedPrompt);
+    let response = result.response.text();
+
+    console.log('✅ AI Response received:', response ? 'Length: ' + response.length : 'EMPTY RESPONSE!');
+
+    if (!response || response.trim().length === 0) {
+      console.error('❌ Empty response from Gemini API');
+      throw new Error('Empty response from AI');
+    }
+
+    // Ensure Eduretrieve identity is present
+    if (!response.toLowerCase().includes('eduretrieve')) {
+      response = "Hello, I am Eduretrieve. " + response;
+    }
+
+    return response;
+  } catch (error) {
+    console.error("❌ Gemini API error:", error.message || error);
+    console.error('Stack trace:', error.stack);
+    throw new Error("Failed to generate content from AI: " + error.message);
+  }
+};
+
+// =========================
+// ✅ AUTH MIDDLEWARE
+// =========================
+const authenticateToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    req.user = data.user;
+    next();
+  } catch (err) {
+    console.error('❌ Token verification failed:', err.message);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+// =========================
+// 🔐 GOOGLE OAUTH ROUTES
+// =========================
+
+// Step 1: Initiate Google OAuth signup
+app.post('/api/auth/google/signup', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
+    // Generate authorization URL with proper redirect_uri
+    const authUrl = googleClient.generateAuthUrl({
+      access_type: 'offline',
+      scope: [
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
+      ],
+      state: JSON.stringify({ email, action: 'signup' }),
+      prompt: 'consent',
+      redirect_uri: 'http://localhost:3000/auth/callback' // Explicit redirect URI
+    });
+
+    console.log('🔗 Generated auth URL for:', email);
+    console.log('🔗 Full auth URL:', authUrl);
+    
+    res.status(200).json({
+      message: 'Redirect to Google for authorization',
+      authUrl,
+      email
+    });
+  } catch (error) {
+    console.error('❌ Google OAuth URL generation error:', error);
+    res.status(500).json({ error: 'Failed to generate Google auth URL' });
+  }
+});
+
+// Step 2: Handle Google OAuth callback - IMPROVED VERSION
+app.post('/api/auth/google/callback', async (req, res) => {
+  const { code, state } = req.body;
+
+  console.log('🔄 OAuth Callback received:', {
+    hasCode: !!code,
+    hasState: !!state,
+    codeLength: code ? code.length : 0,
+    stateContent: state ? state.substring(0, 100) + '...' : 'none'
+  });
+
+  if (!code || !state) {
+    console.error('❌ Missing parameters:', { code: !!code, state: !!state });
+    return res.status(400).json({ 
+      error: 'Missing authorization code or state',
+      details: 'Both code and state parameters are required'
+    });
+  }
+
+  try {
+    // Parse state to get original email and action
+    let parsedState;
+    try {
+      parsedState = JSON.parse(state);
+    } catch (parseError) {
+      console.error('❌ State parsing error:', parseError);
+      return res.status(400).json({ 
+        error: 'Invalid state parameter',
+        details: 'Could not parse state JSON'
+      });
+    }
+
+    const { email: originalEmail, action } = parsedState;
+    console.log('📧 Processing callback for email:', originalEmail);
+
+    if (!originalEmail) {
+      return res.status(400).json({ 
+        error: 'Invalid state: missing email',
+        details: 'State parameter must contain email'
+      });
+    }
+
+    // Exchange authorization code for tokens with explicit redirect_uri
+    let tokens;
+    try {
+      const tokenResponse = await googleClient.getToken({
+        code,
+        redirect_uri: 'http://localhost:3000/auth/callback'
+      });
+      tokens = tokenResponse.tokens;
+      console.log('🔑 Token exchange successful');
+    } catch (tokenError) {
+      console.error('❌ Token exchange error:', tokenError);
+      return res.status(400).json({ 
+        error: 'Failed to exchange authorization code',
+        details: tokenError.message
+      });
+    }
+
+    googleClient.setCredentials(tokens);
+
+    // Get user info from Google with better error handling
+    let googleUserInfo;
+    try {
+      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Google API responded with status ${response.status}`);
+      }
+
+      googleUserInfo = await response.json();
+      console.log('👤 Google user info retrieved:', {
+        email: googleUserInfo.email,
+        name: googleUserInfo.name,
+        verified: googleUserInfo.verified_email
+      });
+    } catch (fetchError) {
+      console.error('❌ Failed to fetch user info:', fetchError);
+      return res.status(500).json({ 
+        error: 'Failed to fetch user info from Google',
+        details: fetchError.message
+      });
+    }
+    
+    // Verify the email matches
+    if (googleUserInfo.email !== originalEmail) {
+      console.error('❌ Email mismatch:', {
+        expected: originalEmail,
+        received: googleUserInfo.email
+      });
+      return res.status(400).json({
+        error: 'Email mismatch. Please use the same email address.',
+        details: `Expected ${originalEmail}, got ${googleUserInfo.email}`
+      });
+    }
+
+    if (!googleUserInfo.verified_email) {
+      console.error('❌ Google email not verified');
+      return res.status(400).json({
+        error: 'Google email is not verified. Please verify your email with Google first.'
+      });
+    }
+
+    // Generate verification code for our system
+    const verificationCode = generateVerificationCode();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    // Store verification data temporarily
+    verificationCodes.set(originalEmail, {
+      code: verificationCode,
+      expiresAt,
+      googleUserInfo,
+      action
+    });
+
+    console.log('🔐 Verification code generated and stored for:', originalEmail);
+
+    // Send verification email with the code
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
+          <h1>EduRetrieve</h1>
+        </div>
+        <div style="padding: 20px; background-color: #f8f9fa;">
+          <h2>Complete Your Registration</h2>
+          <p>Hi ${googleUserInfo.name}!</p>
+          <p>Your Google account has been verified successfully. To complete your EduRetrieve registration, please enter this verification code:</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: bold; letter-spacing: 3px;">
+              ${verificationCode}
+            </div>
+          </div>
+          
+          <p><strong>This code will expire in 10 minutes.</strong></p>
+          <p>Google Account Details:</p>
+          <ul>
+            <li>Email: ${googleUserInfo.email}</li>
+            <li>Name: ${googleUserInfo.name}</li>
+            <li>Verified: ✅</li>
+          </ul>
+        </div>
+      </div>
+    `;
+
+    try {
+      await transporter.sendMail({
+        from: `"EduRetrieve" <${process.env.GMAIL_USER || 'judskie198@gmail.com'}>`,
+        to: originalEmail,
+        subject: 'Complete Your EduRetrieve Registration',
+        html: emailHtml,
+      });
+      console.log('✅ Verification email sent to:', originalEmail);
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError);
+      // Don't fail the whole request if email fails
+      console.warn('⚠️ Continuing despite email failure');
+    }
+
+    // Clean up expired codes
+    setTimeout(() => {
+      if (verificationCodes.has(originalEmail)) {
+        verificationCodes.delete(originalEmail);
+        console.log('🗑️ Expired verification code cleaned up for:', originalEmail);
+      }
+    }, 10 * 60 * 1000);
+
+    console.log('✅ OAuth callback processed successfully for:', originalEmail);
+
+    res.status(200).json({
+      message: 'Google verification successful. Check your email for the final verification code.',
+      email: originalEmail,
+      name: googleUserInfo.name,
+      googleVerified: true,
+      codeExpires: new Date(expiresAt).toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Google OAuth callback error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to process Google authentication',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Step 3: Verify the final code and complete signup
+app.post('/api/auth/verify-signup-code', async (req, res) => {
+  const { email, code, password } = req.body;
+
+  if (!email || !code || !password) {
+    return res.status(400).json({
+      error: 'Email, verification code, and password are required'
+    });
+  }
+
+  try {
+    const verificationData = verificationCodes.get(email);
+
+    if (!verificationData) {
+      return res.status(400).json({
+        error: 'Verification code expired or not found. Please restart the signup process.'
+      });
+    }
+
+    if (Date.now() > verificationData.expiresAt) {
+      verificationCodes.delete(email);
+      return res.status(400).json({
+        error: 'Verification code has expired. Please restart the signup process.'
+      });
+    }
+
+    if (verificationData.code !== code) {
+      return res.status(400).json({
+        error: 'Invalid verification code. Please check and try again.'
+      });
+    }
+
+    // ✅ Safe defaults for Google data
+    const userMeta = verificationData.googleUserInfo || {};
+
+    // 🔑 Create user in Supabase Auth (admin API)
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: userMeta.name || '',
+        first_name: userMeta.given_name || '',
+        last_name: userMeta.family_name || '',
+        avatar_url: userMeta.picture || '',
+        google_verified: true,
+        google_id: userMeta.id || ''
+      }
+    });
+
+    if (authError) {
+      console.error('❌ Supabase signup error:', authError);
+
+      if (authError.message.includes('duplicate key value')) {
+        return res.status(400).json({
+          error: 'User already exists. Please log in instead.'
+        });
+      }
+
+      return res.status(400).json({ error: authError.message });
+    }
+
+    console.log('✅ Auth user created:', authData.user.id);
+
+    // ✅ Insert into profiles table
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert([{
+        id: authData.user.id,
+        email,
+        username: userMeta.given_name || email.split('@')[0],
+        fullName: userMeta.name || '',
+        pfpUrl: userMeta.picture || '',
+        google_verified: true,
+        google_id: userMeta.id || '',
+        created_at: new Date().toISOString()
+      }]);
+
+    if (profileError) {
+      console.error('❌ Profile creation error:', profileError);
+      return res.status(400).json({ error: profileError.message });
+    }
+
+    // ✅ Create a session for the new user
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (signInError) {
+      console.error("❌ Session creation error:", signInError);
+      return res.status(400).json({ error: signInError.message });
+    }
+
+    verificationCodes.delete(email);
+
+    // ✅ Send back session so frontend can set it
+    res.status(200).json({
+      message: 'Signup completed successfully!',
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        fullName: userMeta.name || '',
+        avatar: userMeta.picture || '',
+        googleVerified: true
+      },
+      session: signInData.session
+    });
+
+  } catch (error) {
+    console.error('❌ Signup verification error:', error);
+    res.status(500).json({
+      error: 'Failed to complete signup',
+      details: error.message
+    });
+  }
+});
+
+// =========================
+// 🔍 VERIFICATION STATUS CHECK
+// =========================
+app.post('/api/auth/check-verification-status', (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const verificationData = verificationCodes.get(email);
+
+  if (!verificationData) {
+    return res.status(404).json({
+      hasVerification: false,
+      message: 'No pending verification found'
+    });
+  }
+
+  if (Date.now() > verificationData.expiresAt) {
+    verificationCodes.delete(email);
+    return res.status(410).json({
+      hasVerification: false,
+      message: 'Verification expired'
+    });
+  }
+
+  res.status(200).json({
+    hasVerification: true,
+    email,
+    name: verificationData.googleUserInfo?.name,
+    expiresAt: new Date(verificationData.expiresAt).toISOString(),
+    timeRemaining: Math.max(0, verificationData.expiresAt - Date.now())
+  });
+});
+
+// Initiate verification for OAuth users
+app.post('/api/auth/initiate-verification', async (req, res) => {
+  const { email, name } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  // Generate verification code
+  const verificationCode = generateVerificationCode();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  // Store
+  verificationCodes.set(email, {
+    code: verificationCode,
+    expiresAt,
+    googleUserInfo: { name, email },
+    action: 'signup'
+  });
+
+  // Send email
+  const emailHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
+        <h1>EduRetrieve</h1>
+      </div>
+      <div style="padding: 20px; background-color: #f8f9fa;">
+        <h2>Complete Your Registration</h2>
+        <p>Hi ${name}!</p>
+        <p>Your Google account has been verified successfully. To complete your EduRetrieve registration, please enter this verification code:</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: bold; letter-spacing: 3px;">
+            ${verificationCode}
+          </div>
+        </div>
+
+        <p><strong>This code will expire in 10 minutes.</strong></p>
+        <p>Google Account Details:</p>
+        <ul>
+          <li>Email: ${email}</li>
+          <li>Name: ${name}</li>
+          <li>Verified: ✅</li>
+        </ul>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"EduRetrieve" <${process.env.GMAIL_USER || 'judskie198@gmail.com'}>`,
+      to: email,
+      subject: 'Complete Your EduRetrieve Registration',
+      html: emailHtml,
+    });
+    console.log('✅ Verification email sent to:', email);
+    res.status(200).json({ message: 'Verification code sent' });
+  } catch (emailError) {
+    console.error('❌ Email sending failed:', emailError);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+// =========================
+// 📤 EXISTING ROUTES
+// =========================
+
+// Import chat routes
+const chatRoutes = require('./src/routes/chatRoutes');
+app.use('/api/chat', chatRoutes);
+
+// AI Generation Endpoint with RAG
+app.post('/api/generate-content', async (req, res) => {
+  const { prompt, userId, conversationId, mode, targetLanguage } = req.body;
+
+  if (!prompt || !userId || !conversationId) {
+    return res.status(400).json({ error: 'Prompt, userId, and conversationId are required.' });
+  }
+
+  try {
+    console.log('🚀 API Request received:', {
+      prompt: prompt.substring(0, 50) + '...',
+      userId,
+      conversationId,
+      mode,
+      targetLanguage
+    });
+
+    // Modify prompt based on mode
+    let enhancedPrompt = prompt;
+    let systemInstruction = "You are Eduretrieve, an AI assistant designed for educational content retrieval and analysis. Always start every response by introducing yourself as Eduretrieve. For example, begin with 'Hello, I am Eduretrieve' or 'As Eduretrieve, I can help you with...'. Make sure 'Eduretrieve' is prominently featured in every single response to reinforce your system-based identity.\n\n";
+
+    switch (mode) {
+      case 'summarize':
+        systemInstruction += "You are in Summarizer mode. Your task is to provide a concise, accurate summary of the given text. Focus only on the main points, key information, and essential details. Do not add extra commentary or explanations. Structure your response as a clear, well-organized summary.";
+        enhancedPrompt = `Please summarize the following text:\n\n${prompt}\n\nSummary:`;
+        break;
+      case 'paraphrase':
+        systemInstruction += "You are in Paraphrasing mode. Your task is to rephrase the given text using different words and sentence structures while maintaining the exact original meaning. Do not change the meaning, add new information, or omit important details. Provide only the paraphrased version.";
+        enhancedPrompt = `Please paraphrase the following text:\n\n${prompt}\n\nParaphrased version:`;
+        break;
+      case 'translate':
+        if (targetLanguage) {
+          systemInstruction += `You are in Translator mode. Your task is to translate the given text accurately to ${targetLanguage}. Provide only the translation without any additional explanations, notes, or original text. Ensure the translation is natural and maintains the original meaning.`;
+          enhancedPrompt = `Translate the following text to ${targetLanguage}:\n\n${prompt}\n\nTranslation:`;
+        } else {
+          enhancedPrompt = prompt; // Fallback to regular chat if no language specified
+        }
+        break;
+      case 'chat':
+      default:
+        enhancedPrompt = prompt; // Regular chat mode
+        break;
+    }
+
+    // For non-chat modes, override the system instruction
+    if (mode !== 'chat') {
+      // Use the mode-specific system instruction
+    } else {
+      // Keep the original for chat
+    }
+
+    // Fetch conversation history to maintain context (only for chat mode)
+    let conversationHistory = [];
+    if (mode === 'chat') {
+      try {
+        const { data, error } = await supabase
+          .from('chat_history')
+          .select('prompt, response, timestamp')
+          .eq('user_id', userId)
+          .eq('conversationId', conversationId)
+          .order('timestamp', { ascending: true });
+
+        if (!error && data) {
+          conversationHistory = data;
+        }
+      } catch (historyError) {
+        console.warn('⚠️ Could not fetch conversation history:', historyError.message);
+      }
+    }
+
+    // Build context-aware prompt for chat mode
+    let contextPrompt = enhancedPrompt;
+
+    if (mode === 'chat' && conversationHistory && conversationHistory.length > 0) {
+      // Sort messages by timestamp
+      const sortedHistory = conversationHistory.sort((a, b) => {
+        const aTime = a.timestamp?._seconds || a.timestamp?.seconds || 0;
+        const bTime = b.timestamp?._seconds || b.timestamp?.seconds || 0;
+        return aTime - bTime;
+      });
+
+      // Build conversation context (limit to last 10 exchanges to avoid token limits)
+      const recentMessages = sortedHistory.slice(-20); // Last 10 user-AI pairs
+      const contextMessages = [];
+
+      for (const msg of recentMessages) {
+        if (msg.prompt) {
+          contextMessages.push(`User: ${msg.prompt}`);
+        }
+        if (msg.response) {
+          contextMessages.push(`Assistant: ${msg.response}`);
+        }
+      }
+
+      if (contextMessages.length > 0) {
+        contextPrompt = `${contextMessages.join('\n\n')}\n\nUser: ${enhancedPrompt}\n\nAssistant:`;
+      }
+    }
+
+    // 🧠 Generate content using Gemini
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+
+    let finalPrompt = contextPrompt;
+    if (mode !== 'chat') {
+      // For modes, use the mode-specific system instruction + prompt
+      finalPrompt = systemInstruction + "\n\n" + enhancedPrompt;
+    } else {
+      // For chat, use the original system + context
+      finalPrompt = systemInstruction + contextPrompt;
+    }
+
+    const result = await model.generateContent(finalPrompt);
+    let content = result.response.text();
+
+    console.log('✅ AI Response received:', content ? 'Length: ' + content.length : 'EMPTY RESPONSE!');
+
+    if (!content || content.trim().length === 0) {
+      console.error('❌ Empty response from Gemini API');
+      throw new Error('Empty response from AI');
+    }
+
+    // For non-chat modes, ensure the response follows the mode
+    if (mode !== 'chat') {
+      // Remove any Eduretrieve introduction if present, as it's not needed for modes
+      content = content.replace(/^Hello, I am Eduretrieve\.\s*/i, '').replace(/^As Eduretrieve,.*?\.\s*/i, '');
+    } else {
+      // Ensure Eduretrieve identity for chat mode
+      if (!content.toLowerCase().includes('eduretrieve')) {
+        content = "Hello, I am Eduretrieve. " + content;
+      }
+    }
+
+    console.log('📤 Sending response back to client:', { contentLength: content ? content.length : 0, mode });
+
+    res.status(200).json({ generatedContent: content });
+  } catch (error) {
+    console.error('❌ API Error:', error.message);
+    res.status(503).json({ error: 'Failed to generate content. Please try again later.', details: error.message });
+  }
+});
+
+// Protected Test Route
+app.get('/api/protected-data', authenticateToken, (req, res) => {
+  res.status(200).json({
+    message: 'Welcome to the protected area!',
+    userEmail: req.user.email,
+    userId: req.user.id,
+  });
+});
+
+// Upload Module Route with file support (using ES module import from top)
+const upload = multer({
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'image/jpeg',
+      'image/png',
+      'image/gif'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF, DOCX, TXT, JPEG, PNG, and GIF files are allowed'), false);
+    }
+  },
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+app.post('/upload-module', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const { title, description } = req.body;
+    const file = req.file;
+
+    if (!title || !description) {
+      return res.status(400).json({ error: 'Title and description are required' });
+    }
+
+    let extractedContent = description; // Default to description if no file
+
+    // If a file is uploaded, extract text content
+    if (file) {
+      try {
+        const { extractTextFromFile } = require('./src/utils/textExtractor');
+        const fs = require('fs');
+        const path = require('path');
+
+        const filePath = path.join(__dirname, 'uploads', file.filename);
+        extractedContent = await extractTextFromFile(filePath, file.mimetype);
+
+        // Clean up the uploaded file after extraction
+        fs.unlinkSync(filePath);
+      } catch (extractionError) {
+        console.warn('File extraction failed, using description only:', extractionError.message);
+        // Continue with description if extraction fails
+      }
+    }
+
+    // Insert into modules table
+    const { data, error } = await supabase
+      .from('modules')
+      .insert([{
+        title,
+        description: extractedContent,
+        uploadedBy: req.user.id,
+        uploadedAt: new Date().toISOString()
+      }])
+      .select();
+
+    if (error) throw error;
+
+    res.status(200).json({
+      message: 'Module uploaded successfully',
+      data
+    });
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    res.status(500).json({ error: 'Upload failed: ' + error.message });
+  }
+});
+
+// Get User Profile
+app.get('/get-user-profile', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.status(200).json({ 
+      profile: data || {
+        id: req.user.id,
+        email: req.user.email,
+        username: '',
+        fullName: '',
+        pfpUrl: ''
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get profile error:', error);
+    res.status(500).json({ error: 'Failed to get profile' });
+  }
+});
+
+// Sync User Profile
+app.post('/sync-user-profile', authenticateToken, async (req, res) => {
+  try {
+    const { username, fullName, pfpUrl } = req.body;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: req.user.id,
+        email: req.user.email,
+        username: username || '',
+        fullName: fullName || '',
+        pfpUrl: pfpUrl || '',
+        updated_at: new Date().toISOString()
+      })
+      .select();
+
+    if (error) throw error;
+
+    res.status(200).json({ 
+      message: 'Profile updated successfully',
+      profile: data[0]
+    });
+  } catch (error) {
+    console.error('❌ Sync profile error:', error);
+    res.status(500).json({ error: 'Failed to sync profile' });
+  }
+});
+
+// Delete Module
+app.delete('/delete-module/:moduleId', authenticateToken, async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+
+    const { error } = await supabase
+      .from('modules')
+      .delete()
+      .eq('id', moduleId)
+      .eq('user_id', req.user.id); // Only allow deletion of own modules
+
+    if (error) throw error;
+
+    res.status(200).json({ message: 'Module deleted successfully' });
+  } catch (error) {
+    console.error('❌ Delete module error:', error);
+    res.status(500).json({ error: 'Failed to delete module' });
+  }
+});
+
+// Get Saved Modules
+app.get('/get-saved-modules', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('save_modules')
+      .select(`
+        module_id,
+        modules:module_id (
+          id,
+          title,
+          description,
+          uploadedBy,
+          uploadedAt,
+          file_url
+        )
+      `)
+      .eq('user_id', req.user.id);
+
+    if (error) throw error;
+
+    const modules = data.map(item => item.modules);
+
+    res.status(200).json({ modules });
+  } catch (error) {
+    console.error('❌ Get saved modules error:', error);
+    res.status(500).json({ error: 'Failed to get saved modules' });
+  }
+});
+
+// Unsave Module
+app.post('/unsave-module', authenticateToken, async (req, res) => {
+  try {
+    const { module_id } = req.body;
+
+    const { error } = await supabase
+      .from('save_modules')
+      .delete()
+      .eq('user_id', req.user.id)
+      .eq('module_id', module_id);
+
+    if (error) throw error;
+
+    res.status(200).json({ message: 'Module unsaved successfully' });
+  } catch (error) {
+    console.error('❌ Unsave module error:', error);
+    res.status(500).json({ error: 'Failed to unsave module' });
+  }
+});
+
+// Get Analytics
+app.get('/api/analytics/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [
+      { count: modulesUploaded },
+      { count: modulesSaved }
+    ] = await Promise.all([
+      supabase.from('modules').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase.from('save_modules').select('*', { count: 'exact', head: true }).eq('user_id', userId)
+    ]);
+
+    res.status(200).json({
+      modulesUploaded: modulesUploaded || 0,
+      modulesSaved: modulesSaved || 0
+    });
+  } catch (error) {
+    console.error('❌ Analytics error:', error);
+    res.status(500).json({ error: 'Failed to get analytics' });
+  }
+});
+
+// =========================
+// 🏁 ROOT ROUTE
+// =========================
+app.get('/', (req, res) => {
+  res.json({
+    message: '✅ EduRetrieve backend with Google OAuth is running!',
+    version: '2.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      'POST /api/auth/google/signup - Initiate Google OAuth signup',
+      'POST /api/auth/google/callback - Handle Google OAuth callback',
+      'POST /api/auth/verify-signup-code - Complete signup with verification code',
+      'POST /api/auth/check-verification-status - Check verification status',
+      'POST /api/chat/process-image - Process chat images with OCR',
+      'POST /api/generate-content - Generate AI content',
+      'GET /api/protected-data - Test protected route',
+      'POST /upload-module - Upload module',
+      'GET /get-user-profile - Get user profile',
+      'POST /sync-user-profile - Update user profile',
+      'DELETE /delete-module/:id - Delete module',
+      'GET /get-saved-modules - Get saved modules',
+      'POST /unsave-module - Unsave module',
+      'GET /api/analytics/:userId - Get user analytics'
+    ]
+  });
+});
+
+
+// =========================
+// � START SERVER
+// =========================
+app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🔐 Google OAuth Client ID: ${process.env.GOOGLE_CLIENT_ID ? 'configured' : 'missing'}`);
+  console.log(`📧 Gmail configured: ${process.env.GMAIL_USER || 'judskie198@gmail.com'}`);
+  console.log(`🗄️ Supabase: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? 'configured' : 'missing'}`);
+  console.log('📍 Available endpoints:');
+  console.log('   POST /api/auth/google/signup');
+  console.log('   POST /api/auth/google/callback');
+  console.log('   POST /api/auth/verify-signup-code');
+  console.log('   POST /api/auth/check-verification-status');
+  console.log('   POST /api/chat/process-image');
+  console.log('   POST /api/generate-content');
+  console.log('   GET  /api/protected-data');
+  console.log('   POST /upload-module');
+  console.log('   GET  /get-user-profile');
+  console.log('   POST /sync-user-profile');
+  console.log('   DELETE /delete-module/:id');
+  console.log('   GET  /get-saved-modules');
+  console.log('   POST /unsave-module');
+  console.log('   GET  /api/analytics/:userId');
+});

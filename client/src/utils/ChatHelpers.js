@@ -1,0 +1,255 @@
+import { supabase } from '../supabaseClient';
+import API_BASE_URL from '../config';
+
+// ------------------------
+// 📅 Format Timestamp
+// ------------------------
+
+/**
+ * Converts various timestamp formats into a human-readable string.
+ */
+export const formatFirebaseTimestamp = (timestamp) => {
+  try {
+    let seconds, nanoseconds;
+
+    if (timestamp?._seconds) {
+      seconds = timestamp._seconds;
+      nanoseconds = timestamp._nanoseconds || 0;
+    } else if (timestamp?.seconds) {
+      seconds = timestamp.seconds;
+      nanoseconds = timestamp.nanoseconds || 0;
+    } else if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      return new Date(timestamp).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } else {
+      return 'Invalid Date';
+    }
+
+    const millis = seconds * 1000 + nanoseconds / 1_000_000;
+    return new Date(millis).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return 'Invalid Date';
+  }
+};
+
+// ------------------------
+// 🆔 Unique ID Generator
+// ------------------------
+
+export const generateUniqueId = () =>
+  `conv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+// ------------------------
+// 💾 LocalStorage Constants
+// ------------------------
+
+export const getUserChatKey = (userId, mode = 'chat') => `eduretrieve_chat_sessions_${userId}_${mode}`;
+
+// ------------------------
+// 📂 Load Chat Sessions
+// ------------------------
+
+/**
+ * Loads chat history sessions from localStorage for a specific mode.
+ */
+export const fetchChatHistoryApi = async (user, mode = 'chat') => {
+  try {
+    const raw = localStorage.getItem(getUserChatKey(user.id, mode));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((s) => ({ ...s, messages: s.messages || [] }))
+      : [];
+  } catch (err) {
+    console.warn('⚠️ Failed to parse chat history from localStorage:', err);
+    return [];
+  }
+};
+
+// ------------------------
+// 💬 Save Chat Entry
+// ------------------------
+
+/**
+ * Saves a new prompt-response pair to localStorage under the given session for a specific mode.
+ */
+export const saveChatEntryApi = async (user, { prompt, response, conversationId, timestamp, imagePreview, mode = 'chat' }) => {
+  let sessions = await fetchChatHistoryApi(user, mode);
+
+  const newMessages = [
+    { type: 'user', text: prompt, timestamp, imagePreview },
+    { type: 'ai', text: response, timestamp },
+  ];
+
+  const existing = sessions.find((s) => s.id === conversationId);
+
+  if (existing) {
+    existing.messages.push(...newMessages);
+  } else {
+    sessions.unshift({
+      id: conversationId,
+      title: `Chat from ${formatFirebaseTimestamp(timestamp).split(',')[0]}`,
+      messages: newMessages,
+    });
+  }
+
+  localStorage.setItem(getUserChatKey(user.id, mode), JSON.stringify(sessions));
+};
+
+// ------------------------
+// ❌ Delete Chat Session
+// ------------------------
+
+/**
+ * Deletes a chat session by its ID from localStorage for a specific mode.
+ */
+export const deleteChatSessionApi = async (user, sessionId, mode = 'chat') => {
+  const sessions = await fetchChatHistoryApi(user, mode);
+  const updated = sessions.filter((s) => s.id !== sessionId);
+  localStorage.setItem(getUserChatKey(user.id, mode), JSON.stringify(updated));
+  return { message: 'Session deleted locally' };
+};
+
+// ------------------------
+// 🧠 Call AI Backend
+// ------------------------
+
+/**
+ * Sends a prompt to the backend AI API and returns the generated response.
+ */
+export const generateContentApi = async (user, prompt, conversationId, mode = 'chat', targetLanguage = null) => {
+  console.log('ChatHelpers.js: generateContentApi called with:', {
+    userId: user?.id,
+    prompt: prompt?.substring(0, 50) + '...',
+    conversationId,
+    mode,
+    targetLanguage
+  });
+
+  if (!prompt || typeof prompt !== 'string') {
+    throw new Error('Invalid prompt');
+  }
+
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  const { data, error } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+
+  if (error || !token) {
+    throw new Error('Missing or invalid Supabase token');
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/generate-content`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      prompt,
+      userId: user.id,
+      conversationId,
+      mode,
+      targetLanguage,
+    }),
+  });
+
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result.error || 'Failed to generate content');
+  }
+
+  return result;
+};
+
+/**
+ * Processes an uploaded file through text extraction and AI analysis, then saves to localStorage for a specific mode
+ */
+export const processChatFileApi = async (user, file, conversationId, customPrompt = null, mode = 'chat') => {
+  console.log('ChatHelpers.js: processChatFileApi called with:', {
+    userId: user?.id,
+    fileName: file?.name,
+    fileSize: file?.size,
+    fileType: file?.type,
+    conversationId
+  });
+
+  if (!file) {
+    throw new Error('No file provided');
+  }
+
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('conversationId', conversationId);
+  if (customPrompt) {
+    formData.append('prompt', customPrompt);
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/chat/process-file`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result.error || 'Failed to process file');
+  }
+
+  // Create file preview URL for display (only for images)
+  const isImage = file.type.startsWith('image/');
+  const filePreview = isImage ? URL.createObjectURL(file) : null;
+
+  // Create message objects
+  const fileMessage = {
+    type: 'user',
+    text: `[${result.fileType === 'image' ? 'Image' : 'File'} uploaded] ${result.extractedText}`,
+    timestamp: {
+      _seconds: Math.floor(Date.now() / 1000),
+      _nanoseconds: (Date.now() % 1000) * 1_000_000
+    },
+    conversationId,
+    filePreview,
+    fileName: result.fileName,
+    fileType: result.fileType
+  };
+
+  const aiMessage = {
+    type: 'ai',
+    text: result.aiResponse,
+    timestamp: {
+      _seconds: Math.floor(Date.now() / 1000),
+      _nanoseconds: (Date.now() % 1000) * 1_000_000
+    },
+    conversationId
+  };
+
+  // Save to localStorage like regular chat messages
+  await saveChatEntryApi(user, {
+    prompt: fileMessage.text,
+    response: aiMessage.text,
+    timestamp: fileMessage.timestamp,
+    conversationId,
+    filePreview,
+    mode
+  });
+
+  return result;
+};
