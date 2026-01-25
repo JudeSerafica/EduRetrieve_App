@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import API_BASE_URL from '../config';
-import { supabase } from '../supabaseClient';
 
 const EnhancedSignup = () => {
   const [email, setEmail] = useState('');
@@ -133,17 +132,21 @@ const EnhancedSignup = () => {
     setError('');
     setMessage('');
 
-    console.log('Current origin for redirect:', window.location.origin);
-
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/signup`
-        }
+      const response = await fetch(`${API_BASE_URL}/api/auth/google/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
       });
-      if (error) throw error;
-      // The page will redirect to Google, then back to the current page
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to initiate Google signup');
+      }
+
+      // Redirect to Google auth URL
+      window.location.href = result.authUrl;
     } catch (err) {
       console.error('Google signup error:', err);
       setError(err.message);
