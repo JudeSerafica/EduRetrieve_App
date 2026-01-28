@@ -134,7 +134,7 @@ export function setupPageViewTracking(navigate) {
   });
 }
 
-export default {
+const activityTracker = {
   trackActivity,
   trackPageView,
   trackChatInteraction,
@@ -143,3 +143,5 @@ export default {
   trackSearch,
   setupPageViewTracking,
 };
+
+export default activityTracker;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Outlet, Link } from 'react-router-dom';
-import { FaChartBar, FaCog, FaSignOutAlt, FaUserShield, FaBell } from 'react-icons/fa';
+import { FaChartBar, FaCog, FaSignOutAlt, FaUserShield } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import LogoutModal from '../components/LogoutModal';
 import '../styles/App.css';

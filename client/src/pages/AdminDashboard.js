@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import '../styles/App.css';
 
 function AdminDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [summary, setSummary] = useState(null);
   const [users, setUsers] = useState([]);
   const [modules, setModules] = useState([]);
-  const [modulesByUser, setModulesByUser] = useState([]);
   const [activities, setActivities] = useState([]);
   const [todayActivities, setTodayActivities] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
@@ -16,7 +13,6 @@ function AdminDashboard() {
   const [success, setSuccess] = useState('');
   const [session, setSession] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [expandedUser, setExpandedUser] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Modules by User - Search and Filter
@@ -26,7 +22,6 @@ function AdminDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [selectedModule, setSelectedModule] = useState(null);
-  const [modalMode, setModalMode] = useState('create'); // 'create' or 'reassign'
 
   // Create/Reassign form data
   const [formData, setFormData] = useState({
@@ -57,8 +52,6 @@ function AdminDashboard() {
       setSession(session);
       if (session) {
         checkAdminStatus();
-      } else {
-        setIsAdmin(false);
       }
     });
 
@@ -70,7 +63,6 @@ function AdminDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        setIsAdmin(false);
         return;
       }
 
@@ -84,22 +76,17 @@ function AdminDashboard() {
 
       if (response.ok) {
         const data = await response.json();
-        setIsAdmin(data.isAdmin);
         if (data.isAdmin) {
           fetchDashboardData(session.access_token);
         }
-      } else {
-        setIsAdmin(false);
       }
     } catch (error) {
       console.error('Error checking admin status:', error);
-      setIsAdmin(false);
     }
   };
 
   const fetchDashboardData = async (token, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
-    setLoading(true);
     setError('');
     setSuccess('');
     try {
@@ -140,7 +127,6 @@ function AdminDashboard() {
         setUsers(usersData.users);
       }
       if (modulesData.modules) setModules(modulesData.modules);
-      if (modulesData.modulesByUser) setModulesByUser(modulesData.modulesByUser);
       if (activitiesData.activities) setActivities(activitiesData.activities);
       if (todayActivitiesData.activities) setTodayActivities(todayActivitiesData.activities);
 
@@ -151,7 +137,6 @@ function AdminDashboard() {
       console.error('Error fetching dashboard data:', error);
       setError('Failed to load dashboard data: ' + error.message);
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -377,30 +362,7 @@ function AdminDashboard() {
     setFilterUserId(e.target.value);
     fetchModuleUserAssociations();
   };
-
-  // Apply search and filter
-  const applyFilters = () => {
-    fetchModuleUserAssociations();
-  };
-
-  // Clear filters
-  const clearFilters = () => {
-    setSearchTerm('');
-    setFilterUserId('');
-    fetchModuleUserAssociations();
-  };
-
-  // Open create modal
-  const openCreateModal = () => {
-    setModalMode('create');
-    setFormData({ moduleId: '', userId: '', title: '', description: '' });
-    setShowCreateModal(true);
-    fetchAvailableUsers();
-  };
-
-  // Open reassign modal
   const openReassignModal = (module) => {
-    setModalMode('reassign');
     setSelectedModule(module);
     setFormData({ moduleId: module.id, userId: '', title: '', description: '' });
     setShowReassignModal(true);
@@ -494,42 +456,6 @@ function AdminDashboard() {
     }
   };
 
-  // Delete module-user association
-  const handleDeleteAssociation = async (moduleId, moduleTitle) => {
-    try {
-      setError('');
-      setSuccess('');
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('Not authenticated');
-        return;
-      }
-
-      const response = await fetch(`/api/admin/module-user-associations/${moduleId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(data.message);
-        fetchModuleUserAssociations();
-        fetchDashboardData(session.access_token);
-      } else {
-        setError(data.error || 'Failed to delete module');
-      }
-    } catch (error) {
-      console.error('Error deleting module:', error);
-      setError('Failed to delete module: ' + error.message);
-    } finally {
-      setConfirmDelete(null);
-    }
-  };
-
   // Close modals
   const closeCreateModal = () => {
     setShowCreateModal(false);
@@ -542,11 +468,6 @@ function AdminDashboard() {
     setSelectedModule(null);
     setFormData({ moduleId: '', userId: '', title: '', description: '' });
     setError('');
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/';
   };
 
   const formatDate = (dateString) => {
