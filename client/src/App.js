@@ -33,7 +33,6 @@ import 'react-toastify/dist/ReactToastify.css';
 
 function AuthWrapper() {
   const [loadingInitialAuth, setLoadingInitialAuth] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,8 +60,6 @@ function AuthWrapper() {
         } catch (error) {
           console.error('Error checking admin status:', error);
         }
-
-        setIsAdmin(userIsAdmin);
 
         const currentPath = window.location.pathname;
         const isOnPublicPage =
@@ -111,8 +108,6 @@ function AuthWrapper() {
           console.error('Error checking admin status:', error);
         }
 
-        setIsAdmin(userIsAdmin);
-
         // Redirect if needed
         const currentPath = window.location.pathname;
         if (userIsAdmin && currentPath.startsWith('/dashboard')) {
@@ -120,9 +115,8 @@ function AuthWrapper() {
         } else if (!userIsAdmin && currentPath.startsWith('/admin')) {
           navigate('/dashboard/home', { replace: true });
         }
-      } else {
-        setIsAdmin(false);
-      }
+      } 
+      
       checkAuth();
     });
 
