@@ -580,20 +580,7 @@ function AdminDashboard() {
       </div>
     );
   }
-
-  if (!isAdmin) {
-    return (
-      <div className="admin-dashboard-container">
-        <div className="admin-access-denied">
-          <h2>🚫 Access Denied</h2>
-          <p>You don't have permission to access the admin dashboard.</p>
-          <p>Only users with the 'admin' role can access this page.</p>
-          <a href="/dashboard/home" className="admin-back-btn">Back to Dashboard</a>
-        </div>
-      </div>
-    );
-  }
-
+  
   return (
     <div className="admin-dashboard-container">
       <div className="admin-header">

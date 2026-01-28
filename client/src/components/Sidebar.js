@@ -87,7 +87,7 @@ function Sidebar({ onLogout, user, isOpen, setIsOpen, isMobile }) {
           )}
 
           <div className="sidebar-bottom">
-            <button className="logout-button" onClick={handleLogout}>
+            <button className=""logout-button onClick={handleLogout}>
               <FaSignOutAlt className="sidebar-icon" /> {isOpen && ''}
             </button>
 

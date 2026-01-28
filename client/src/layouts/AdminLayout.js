@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Outlet, Link } from 'react-router-dom';
-import { FaUsers, FaChartBar, FaCog, FaSignOutAlt, FaUserShield, FaFileAlt, FaBell } from 'react-icons/fa';
+import { FaChartBar, FaCog, FaSignOutAlt, FaUserShield, FaBell } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import LogoutModal from '../components/LogoutModal';
 import '../styles/App.css';
@@ -15,8 +15,6 @@ function AdminLayout() {
 
   const menuItems = [
     { path: '/admin', icon: <FaChartBar />, label: 'Dashboard', exact: true },
-    { path: '/admin/users', icon: <FaUsers />, label: 'Users' },
-    { path: '/admin/activities', icon: <FaFileAlt />, label: 'Activities' },
     { path: '/admin/settings', icon: <FaCog />, label: 'Settings' },
   ];
 

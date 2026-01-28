@@ -25,6 +25,7 @@ import AuthCallback from './components/AuthCallback';
 import SearchPage from './pages/SearchPage';
 import ProgressAnalyticsPage from './pages/ProgressAnalyticsPage';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminSettings from './pages/AdminSettings';
 import AdminLayout from './layouts/AdminLayout';
 
 import { ToastContainer } from 'react-toastify';
@@ -196,9 +197,7 @@ function AuthWrapper() {
       >
         <Route index element={<AdminDashboard />} />
         <Route path="" element={<AdminDashboard />} />
-        <Route path="users" element={<AdminDashboard />} />
-        <Route path="activities" element={<AdminDashboard />} />
-        <Route path="settings" element={<AdminDashboard />} />
+        <Route path="settings" element={<AdminSettings />} />
       </Route>
 
       {/* Catch-all 404 */}
