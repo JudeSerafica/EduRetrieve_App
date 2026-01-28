@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
+import { trackActivity } from '../utils/activityTracker';
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [unverifiedUser, setUnverifiedUser] = useState(false);
@@ -14,7 +17,18 @@ function LoginPage() {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        navigate('/dashboard/home');
+        // Check if user is admin
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profileData?.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard/home');
+        }
       }
     };
     checkUser();
@@ -50,6 +64,44 @@ function LoginPage() {
         setError('Please verify your email before logging in.');
         await supabase.auth.signOut();
         return;
+      }
+
+      // Track successful login
+      await trackActivity('login', {
+        email: email.trim(),
+        timestamp: new Date().toISOString(),
+      });
+
+      // Check if user is admin via API
+      let isAdmin = false;
+      try {
+        console.log('Checking admin status via API...');
+        const response = await fetch('/api/admin/check', {
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        console.log('Admin check response status:', response.status);
+
+        if (response.ok) {
+          const adminData = await response.json();
+          isAdmin = adminData.isAdmin;
+          console.log('Admin check result:', isAdmin);
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.log('Admin check error:', errorData);
+        }
+      } catch (error) {
+        console.error('Error checking admin status:', error);
+      }
+
+      console.log('Final isAdmin:', isAdmin);
+      if (isAdmin) {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard/home');
       }
 
     } catch (err) {
@@ -134,14 +186,24 @@ function LoginPage() {
           </div>
           <div className="form-group">
             <label>Password:</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              placeholder="Enter your password"
-            />
+            <div className="password-input-container">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={loading}
+                placeholder="Enter your password"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={loading}
+              >
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </button>
+            </div>
           </div>
 
           <p>

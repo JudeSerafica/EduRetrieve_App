@@ -7,7 +7,6 @@ import nodemailer from 'nodemailer';
 import multer from 'multer';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 
 const app = express();
@@ -22,19 +21,6 @@ const genAI = new GoogleGenerativeAI({
 });
 console.log('🔍 Gemini client initialized. API key set?', apiKey && apiKey !== 'dummy-key');
 
-// Google OAuth2 Client Setup - Dynamic redirect URI
-const redirectUri = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/auth/callback` : 'http://localhost:3000/auth/callback';
-const googleClient = new OAuth2Client(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri
-);
-
-// Add this logging to debug the OAuth configuration
-console.log('🔐 OAuth Configuration:');
-console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Missing');
-console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'Missing');
-console.log('Redirect URI:', redirectUri);
 
 // =========================
 // 🔧 Middleware
@@ -58,7 +44,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER || 'judskie198@gmail.com',
-    pass: process.env.GMAIL_APP_PASSWORD || 'xncqbcovtcstfbon',
+    pass: process.env.GMAIL_APP_PASSWORD || 'afybzhvvmoioblfu',
   },
 });
 
@@ -138,99 +124,81 @@ const authenticateToken = async (req, res, next) => {
 // 🔐 GOOGLE OAUTH ROUTES
 // =========================
 
-// Step 1: Initiate Google OAuth signup
-app.post('/api/auth/google/signup', async (req, res) => {
-  const { email } = req.body;
 
-  if (!email) return res.status(400).json({ error: 'Email is required' });
 
-  try {
-    const authUrl = googleClient.generateAuthUrl({
-      access_type: 'offline',
-      scope: [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile'
-      ],
-      state: JSON.stringify({ email, action: 'signup' }),
-      prompt: 'consent'
-    });
 
-    res.status(200).json({ message: 'Redirect to Google', authUrl, email });
-  } catch (error) {
-    console.error('Google OAuth signup error:', error);
-    res.status(500).json({ error: 'Failed to generate Google auth URL' });
-  }
-});
 
-// Step 2: Handle Google OAuth callback - IMPROVED VERSION
-app.post('/api/auth/google/callback', async (req, res) => {
-  const { code, state } = req.body;
+// =========================
+// 📧 EMAIL-BASED SIGNUP ROUTES
+// =========================
 
-  if (!code || !state)
-    return res.status(400).json({ error: 'Missing authorization code or state' });
+// Step 1: Initiate email-based signup (send verification code)
+app.post('/api/signup', async (req, res) => {
+  const { email, password } = req.body;
 
-  let parsedState;
-  try {
-    parsedState = JSON.parse(state);
-  } catch {
-    return res.status(400).json({ error: 'Invalid state parameter' });
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  const { email: originalEmail, action } = parsedState;
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+  }
 
   try {
-    // Exchange code for tokens using dynamic redirect URI
-    const tokenResponse = await googleClient.getToken({
-      code,
-      redirect_uri: redirectUri
-    });
-    googleClient.setCredentials(tokenResponse.tokens);
+    // Check if user already exists
+    const { data: existingUser, error: checkError } = await supabase.auth.admin.listUsers();
+    const userExists = existingUser.users.some(user => user.email === email);
 
-    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${tokenResponse.tokens.access_token}` }
-    });
-    const googleUserInfo = await response.json();
+    if (userExists) {
+      return res.status(400).json({ error: 'User already exists. Please log in instead.' });
+    }
 
-    if (googleUserInfo.email !== originalEmail)
-      return res.status(400).json({ error: 'Email mismatch' });
+    // Clean up any existing profiles for this email to prevent conflicts
+    const { error: cleanupError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('email', email);
 
-    if (!googleUserInfo.verified_email)
-      return res.status(400).json({ error: 'Google email not verified' });
+    if (cleanupError) {
+      console.warn('⚠️ Profile cleanup warning:', cleanupError.message);
+      // Don't fail signup if cleanup fails
+    } else {
+      console.log('🧹 Cleaned up existing profiles for email:', email);
+    }
 
-    const expiresAt = Date.now() + 10 * 60 * 1000;
+    // Generate verification code
     const verificationCode = generateVerificationCode();
-    verificationCodes.set(originalEmail, {
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // Store verification data
+    verificationCodes.set(email, {
       code: verificationCode,
       expiresAt,
-      googleUserInfo,
-      action
+      password, // Store password temporarily
+      action: 'email-signup'
     });
 
-    console.log('🔐 Verification code generated and stored for:', originalEmail);
+    console.log('🔐 Verification code generated for email signup:', email);
 
+    // Send verification email
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
           <h1>EduRetrieve</h1>
         </div>
         <div style="padding: 20px; background-color: #f8f9fa;">
-          <h2>Complete Your Registration</h2>
-          <p>Hi ${googleUserInfo.name}!</p>
-          <p>Your Google account has been verified successfully. To complete your EduRetrieve registration, please enter this verification code:</p>
-          
+          <h2>Verify Your Email</h2>
+          <p>Hi there!</p>
+          <p>Thank you for signing up for EduRetrieve. To complete your registration, please enter this verification code:</p>
+
           <div style="text-align: center; margin: 30px 0;">
             <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: bold; letter-spacing: 3px;">
               ${verificationCode}
             </div>
           </div>
-          
-          <p><strong>This code will expire in 10 minutes.</strong></p>
-          <p>Google Account Details:</p>
-          <ul>
-            <li>Email: ${googleUserInfo.email}</li>
-            <li>Name: ${googleUserInfo.name}</li>
-            <li>Verified: ✅</li>
-          </ul>
+
+          <p><strong>This code will expire in 5 minutes.</strong></p>
+          <p>If you didn't request this, please ignore this email.</p>
         </div>
       </div>
     `;
@@ -238,92 +206,67 @@ app.post('/api/auth/google/callback', async (req, res) => {
     try {
       await transporter.sendMail({
         from: `"EduRetrieve" <${process.env.GMAIL_USER || 'judskie198@gmail.com'}>`,
-        to: originalEmail,
-        subject: 'Complete Your EduRetrieve Registration',
+        to: email,
+        subject: 'Verify Your EduRetrieve Account',
         html: emailHtml,
       });
-      console.log('✅ Verification email sent to:', originalEmail);
+      console.log('✅ Verification email sent to:', email);
     } catch (emailError) {
       console.error('❌ Email sending failed:', emailError);
-      // Don't fail the whole request if email fails
-      console.warn('⚠️ Continuing despite email failure');
+      verificationCodes.delete(email); // Clean up on email failure
+      return res.status(500).json({ error: 'Failed to send verification email' });
     }
 
     // Clean up expired codes
     setTimeout(() => {
-      if (verificationCodes.has(originalEmail)) {
-        verificationCodes.delete(originalEmail);
-        console.log('🗑️ Expired verification code cleaned up for:', originalEmail);
+      if (verificationCodes.has(email)) {
+        verificationCodes.delete(email);
+        console.log('🗑️ Expired verification code cleaned up for:', email);
       }
-    }, 10 * 60 * 1000);
+    }, 5 * 60 * 1000);
 
-    console.log('✅ OAuth callback processed successfully for:', originalEmail);
-
-    res.status(200).json({
-      message: 'Google verification successful. Check your email for the final verification code.',
-      email: originalEmail,
-      name: googleUserInfo.name,
-      googleVerified: true,
-      codeExpires: new Date(expiresAt).toISOString()
-    });
+    res.status(200).json({ message: 'Verification code sent to your email' });
   } catch (error) {
-    console.error('❌ Google OAuth callback error:', error);
-    console.error('Stack trace:', error.stack);
-    res.status(500).json({ 
-      error: 'Failed to process Google authentication',
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    console.error('❌ Signup initiation error:', error);
+    res.status(500).json({ error: 'Failed to initiate signup' });
   }
 });
 
-// Step 3: Verify the final code and complete signup
-app.post('/api/auth/verify-signup-code', async (req, res) => {
+// Step 2: Verify code and create account
+app.post('/api/verify', async (req, res) => {
   const { email, code, password } = req.body;
 
   if (!email || !code || !password) {
-    return res.status(400).json({
-      error: 'Email, verification code, and password are required'
-    });
+    return res.status(400).json({ error: 'Email, verification code, and password are required' });
   }
 
   try {
     const verificationData = verificationCodes.get(email);
 
     if (!verificationData) {
-      return res.status(400).json({
-        error: 'Verification code expired or not found. Please restart the signup process.'
-      });
+      return res.status(400).json({ error: 'Verification code expired or not found. Please restart the signup process.' });
+    }
+
+    if (verificationData.action !== 'email-signup') {
+      return res.status(400).json({ error: 'Invalid verification type' });
     }
 
     if (Date.now() > verificationData.expiresAt) {
       verificationCodes.delete(email);
-      return res.status(400).json({
-        error: 'Verification code has expired. Please restart the signup process.'
-      });
+      return res.status(400).json({ error: 'Verification code has expired. Please restart the signup process.' });
     }
 
     if (verificationData.code !== code) {
-      return res.status(400).json({
-        error: 'Invalid verification code. Please check and try again.'
-      });
+      return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
     }
 
-    // ✅ Safe defaults for Google data
-    const userMeta = verificationData.googleUserInfo || {};
-
-    // 🔑 Create user in Supabase Auth (admin API)
+    // Create user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: {
-        full_name: userMeta.name || '',
-        first_name: userMeta.given_name || '',
-        last_name: userMeta.family_name || '',
-        avatar_url: userMeta.picture || '',
-        google_verified: true,
-        google_id: userMeta.id || ''
+        signup_method: 'email'
       }
     });
 
@@ -331,9 +274,7 @@ app.post('/api/auth/verify-signup-code', async (req, res) => {
       console.error('❌ Supabase signup error:', authError);
 
       if (authError.message.includes('duplicate key value')) {
-        return res.status(400).json({
-          error: 'User already exists. Please log in instead.'
-        });
+        return res.status(400).json({ error: 'User already exists. Please log in instead.' });
       }
 
       return res.status(400).json({ error: authError.message });
@@ -341,26 +282,16 @@ app.post('/api/auth/verify-signup-code', async (req, res) => {
 
     console.log('✅ Auth user created:', authData.user.id);
 
-    // ✅ Insert into profiles table
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert([{
-        id: authData.user.id,
-        email,
-        username: userMeta.given_name || email.split('@')[0],
-        fullName: userMeta.name || '',
-        pfpUrl: userMeta.picture || '',
-        google_verified: true,
-        google_id: userMeta.id || '',
-        created_at: new Date().toISOString()
-      }]);
-
-    if (profileError) {
-      console.error('❌ Profile creation error:', profileError);
-      return res.status(400).json({ error: profileError.message });
+    // Check if auth user was actually created successfully
+    if (!authData.user || !authData.user.id) {
+      console.error('❌ Auth user creation failed - no user ID returned');
+      return res.status(500).json({ error: 'Failed to create user account' });
     }
 
-    // ✅ Create a session for the new user
+    // Skip profile creation entirely for now - let client handle it
+    console.log('⏭️ Skipping server-side profile creation, letting client handle it');
+
+    // Create a session for the new user
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -373,124 +304,23 @@ app.post('/api/auth/verify-signup-code', async (req, res) => {
 
     verificationCodes.delete(email);
 
-    // ✅ Send back session so frontend can set it
+    // Send back session so frontend can set it
     res.status(200).json({
       message: 'Signup completed successfully!',
       user: {
         id: authData.user.id,
         email: authData.user.email,
-        fullName: userMeta.name || '',
-        avatar: userMeta.picture || '',
-        googleVerified: true
+        fullName: '',
       },
       session: signInData.session
     });
 
   } catch (error) {
-    console.error('❌ Signup verification error:', error);
+    console.error('❌ Email signup verification error:', error);
     res.status(500).json({
       error: 'Failed to complete signup',
       details: error.message
     });
-  }
-});
-
-// =========================
-// 🔍 VERIFICATION STATUS CHECK
-// =========================
-app.post('/api/auth/check-verification-status', (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  const verificationData = verificationCodes.get(email);
-
-  if (!verificationData) {
-    return res.status(404).json({
-      hasVerification: false,
-      message: 'No pending verification found'
-    });
-  }
-
-  if (Date.now() > verificationData.expiresAt) {
-    verificationCodes.delete(email);
-    return res.status(410).json({
-      hasVerification: false,
-      message: 'Verification expired'
-    });
-  }
-
-  res.status(200).json({
-    hasVerification: true,
-    email,
-    name: verificationData.googleUserInfo?.name,
-    expiresAt: new Date(verificationData.expiresAt).toISOString(),
-    timeRemaining: Math.max(0, verificationData.expiresAt - Date.now())
-  });
-});
-
-// Initiate verification for OAuth users
-app.post('/api/auth/initiate-verification', async (req, res) => {
-  const { email, name } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  // Generate verification code
-  const verificationCode = generateVerificationCode();
-  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-  // Store
-  verificationCodes.set(email, {
-    code: verificationCode,
-    expiresAt,
-    googleUserInfo: { name, email },
-    action: 'signup'
-  });
-
-  // Send email
-  const emailHtml = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
-        <h1>EduRetrieve</h1>
-      </div>
-      <div style="padding: 20px; background-color: #f8f9fa;">
-        <h2>Complete Your Registration</h2>
-        <p>Hi ${name}!</p>
-        <p>Your Google account has been verified successfully. To complete your EduRetrieve registration, please enter this verification code:</p>
-
-        <div style="text-align: center; margin: 30px 0;">
-          <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: bold; letter-spacing: 3px;">
-            ${verificationCode}
-          </div>
-        </div>
-
-        <p><strong>This code will expire in 10 minutes.</strong></p>
-        <p>Google Account Details:</p>
-        <ul>
-          <li>Email: ${email}</li>
-          <li>Name: ${name}</li>
-          <li>Verified: ✅</li>
-        </ul>
-      </div>
-    </div>
-  `;
-
-  try {
-    await transporter.sendMail({
-      from: `"EduRetrieve" <${process.env.GMAIL_USER || 'judskie198@gmail.com'}>`,
-      to: email,
-      subject: 'Complete Your EduRetrieve Registration',
-      html: emailHtml,
-    });
-    console.log('✅ Verification email sent to:', email);
-    res.status(200).json({ message: 'Verification code sent' });
-  } catch (emailError) {
-    console.error('❌ Email sending failed:', emailError);
-    res.status(500).json({ error: 'Failed to send email' });
   }
 });
 
@@ -501,6 +331,10 @@ app.post('/api/auth/initiate-verification', async (req, res) => {
 // Import chat routes
 const chatRoutes = require('./src/routes/chatRoutes');
 app.use('/api/chat', chatRoutes);
+
+// Import admin routes
+const adminRoutes = require('./src/routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
 
 // AI Generation Endpoint with RAG
 app.post('/api/generate-content', async (req, res) => {
@@ -652,6 +486,64 @@ app.get('/api/protected-data', authenticateToken, (req, res) => {
   });
 });
 
+// =========================
+// 📊 ACTIVITY TRACKING ROUTES
+// =========================
+
+// Log user activity
+app.post('/api/activity/log', authenticateToken, async (req, res) => {
+  try {
+    const { activityType, details } = req.body;
+    
+    if (!activityType) {
+      return res.status(400).json({ error: 'Activity type is required' });
+    }
+
+    const { error } = await supabase
+      .from('user_activities')
+      .insert({
+        user_id: req.user.id,
+        activity_type: activityType,
+        details: JSON.stringify(details || {}),
+        timestamp: new Date(),
+      });
+
+    if (error) {
+      console.error('❌ Activity log error:', error);
+      return res.status(500).json({ error: 'Failed to log activity' });
+    }
+
+    res.status(200).json({ message: 'Activity logged successfully' });
+  } catch (error) {
+    console.error('❌ Activity logging error:', error);
+    res.status(500).json({ error: 'Failed to log activity' });
+  }
+});
+
+// Get current user's activities
+app.get('/api/activity/my-activities', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+
+    const { data, error } = await supabase
+      .from('user_activities')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('timestamp', { ascending: false })
+      .limit(parseInt(limit));
+
+    if (error) {
+      console.error('❌ Get activities error:', error);
+      return res.status(500).json({ error: 'Failed to fetch activities' });
+    }
+
+    res.status(200).json({ activities: data || [] });
+  } catch (error) {
+    console.error('❌ Get activities error:', error);
+    res.status(500).json({ error: 'Failed to fetch activities' });
+  }
+});
+
 // Upload Module Route with file support (using ES module import from top)
 const upload = multer({
   dest: 'uploads/',
@@ -736,15 +628,22 @@ app.get('/get-user-profile', authenticateToken, async (req, res) => {
 
     if (error && error.code !== 'PGRST116') throw error;
 
-    res.status(200).json({ 
-      profile: data || {
-        id: req.user.id,
-        email: req.user.email,
-        username: '',
-        fullName: '',
-        pfpUrl: ''
-      }
-    });
+    // Map snake_case to camelCase for frontend
+    const profile = data ? {
+      id: data.id,
+      email: data.email,
+      username: data.username,
+      fullName: data.fullname,
+      pfpUrl: data.pfpurl
+    } : {
+      id: req.user.id,
+      email: req.user.email,
+      username: '',
+      fullName: '',
+      pfpUrl: ''
+    };
+
+    res.status(200).json({ profile });
   } catch (error) {
     console.error('❌ Get profile error:', error);
     res.status(500).json({ error: 'Failed to get profile' });
@@ -762,17 +661,26 @@ app.post('/sync-user-profile', authenticateToken, async (req, res) => {
         id: req.user.id,
         email: req.user.email,
         username: username || '',
-        fullName: fullName || '',
-        pfpUrl: pfpUrl || '',
+        fullname: fullName || '',
+        pfpurl: pfpUrl || '',
         updated_at: new Date().toISOString()
       })
       .select();
 
     if (error) throw error;
 
-    res.status(200).json({ 
+    // Map snake_case to camelCase for frontend
+    const profile = data[0] ? {
+      id: data[0].id,
+      email: data[0].email,
+      username: data[0].username,
+      fullName: data[0].fullname,
+      pfpUrl: data[0].pfpurl
+    } : null;
+
+    res.status(200).json({
       message: 'Profile updated successfully',
-      profile: data[0]
+      profile
     });
   } catch (error) {
     console.error('❌ Sync profile error:', error);
@@ -869,6 +777,256 @@ app.get('/api/analytics/:userId', async (req, res) => {
   } catch (error) {
     console.error('❌ Analytics error:', error);
     res.status(500).json({ error: 'Failed to get analytics' });
+  }
+});
+
+// =========================
+// 👤 ADMIN ROUTES
+// =========================
+
+// Check if user is admin
+app.get('/api/admin/check', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get user profile from profiles table
+    const { data: user, error } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', userId)
+      .single();
+
+    if (error || !user) {
+      // If profile doesn't exist, create one
+      if (!user) {
+        const { data: { user: authUser } } = await supabase.auth.getUser(userId);
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: userId,
+            email: authUser?.email || req.user.email,
+            username: (authUser?.email || req.user.email)?.split('@')[0] || 'user',
+            fullname: '',
+            pfpurl: '',
+            role: 'user',
+            created_at: new Date().toISOString()
+          }]);
+        
+        if (insertError) {
+          return res.status(404).json({ error: 'User profile not found and could not be created' });
+        }
+        return res.status(200).json({ isAdmin: false, role: 'user' });
+      }
+      return res.status(404).json({ error: 'User profile not found' });
+    }
+
+    const isAdmin = user.role === 'admin';
+    res.status(200).json({ isAdmin, role: user.role });
+  } catch (error) {
+    console.error('❌ Admin check error:', error);
+    res.status(500).json({ error: 'Failed to check admin status' });
+  }
+});
+
+// Get all users (admin only)
+app.get('/api/admin/users', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Check if user is admin
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (userError || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    // Get all users from profiles
+    const { data: users, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.status(200).json({ users: users || [] });
+  } catch (error) {
+    console.error('❌ Get users error:', error);
+    res.status(500).json({ error: 'Failed to get users' });
+  }
+});
+
+// Get user activities (admin only)
+app.get('/api/admin/activities', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 100, userId: targetUserId } = req.query;
+    
+    // Check if user is admin
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (userError || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    // Build query
+    let query = supabase
+      .from('user_activities')
+      .select(`
+        *,
+        profiles:user_id (email, fullname)
+      `)
+      .order('timestamp', { ascending: false })
+      .limit(parseInt(limit));
+
+    if (targetUserId) {
+      query = query.eq('user_id', targetUserId);
+    }
+
+    const { data: activities, error } = await query;
+
+    if (error) throw error;
+
+    res.status(200).json({ activities: activities || [] });
+  } catch (error) {
+    console.error('❌ Get activities error:', error);
+    res.status(500).json({ error: 'Failed to get activities' });
+  }
+});
+
+// Get admin dashboard summary
+app.get('/api/admin/summary', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Check if user is admin
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (userError || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Get counts and recent activities in parallel
+    const [
+      { count: totalUsers, error: usersError },
+      { count: totalActivities, error: activitiesError },
+      { count: todayLogins, error: todayLoginsError },
+      { data: recentActivities, error: recentError },
+      { data: moduleStats, error: moduleError }
+    ] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('user_activities').select('*', { count: 'exact', head: true }),
+      supabase.from('user_activities')
+        .select('*', { count: 'exact', head: true })
+        .eq('activity_type', 'login')
+        .gte('timestamp', today.toISOString()),
+      supabase
+        .from('user_activities')
+        .select(`
+          *,
+          profiles:user_id (email, fullname)
+        `)
+        .gte('timestamp', startOfWeek.toISOString())
+        .order('timestamp', { ascending: false })
+        .limit(50),
+      supabase.from('modules').select('user_id', { count: 'exact', head: true })
+    ]);
+
+    if (usersError || activitiesError || recentError) {
+      throw new Error('Failed to fetch admin summary');
+    }
+
+    // Calculate activity counts by type
+    const activityCounts = {};
+    const loginHistory = [];
+    
+    if (recentActivities) {
+      recentActivities.forEach(activity => {
+        activityCounts[activity.activity_type] = (activityCounts[activity.activity_type] || 0) + 1;
+        if (activity.activity_type === 'login') {
+          loginHistory.push({
+            email: activity.profiles?.email || 'Unknown',
+            timestamp: activity.timestamp
+          });
+        }
+      });
+    }
+
+    res.status(200).json({
+      summary: {
+        totalUsers: totalUsers || 0,
+        totalActivities: totalActivities || 0,
+        todayLogins: todayLogins || 0,
+        totalModules: moduleStats?.count || 0,
+        activityCounts,
+        loginHistory: loginHistory.slice(0, 20)
+      }
+    });
+  } catch (error) {
+    console.error('❌ Admin summary error:', error);
+    res.status(500).json({ error: 'Failed to get admin summary' });
+  }
+});
+
+// Update user role (admin only)
+app.put('/api/admin/users/:userId/role', authenticateToken, async (req, res) => {
+  try {
+    const adminId = req.user.id;
+    const { userId } = req.params;
+    const { role } = req.body;
+    
+    if (!['user', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be user or admin' });
+    }
+    
+    // Check if requester is admin
+    const { data: adminUser, error: adminError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', adminId)
+      .single();
+
+    if (adminError || adminUser.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    // Update user role
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    // Log this admin action
+    await supabase.from('user_activities').insert({
+      user_id: adminId,
+      activity_type: 'admin_role_change',
+      details: JSON.stringify({ target_user_id: userId, new_role: role }),
+      timestamp: new Date()
+    });
+
+    res.status(200).json({ message: 'User role updated successfully' });
+  } catch (error) {
+    console.error('❌ Update role error:', error);
+    res.status(500).json({ error: 'Failed to update user role' });
   }
 });
 

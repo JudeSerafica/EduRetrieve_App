@@ -207,7 +207,7 @@ function Saves() {
           const module = item.modules;
           const profile = profilesMap.get(module.user_id);
 
-          let uploaderName = module.uploaded_by || profile?.fullName || profile?.username || 'Unknown User';
+          let uploaderName = module.uploaded_by || profile?.fullname || profile?.username || 'Unknown User';
 
           return {
             ...module,

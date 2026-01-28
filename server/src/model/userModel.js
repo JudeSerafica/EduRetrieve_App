@@ -32,6 +32,28 @@ async function getUserById(userId) {
   return data;
 }
 
+// ✅ Check if user is admin
+async function isUserAdmin(userId) {
+  if (!userId) throw new Error('User ID is required');
+
+  const user = await getUserById(userId);
+  return user.role === 'admin';
+}
+
+// ✅ Get all users (for admin)
+async function getAllUsers() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*');
+
+  if (error) {
+    console.error('[getAllUsers] ❌', error.message);
+    throw new Error('Could not fetch users.');
+  }
+
+  return data;
+}
+
 // ✅ Update user profile by user ID
 async function updateUserProfile(userId, userData) {
   if (!userId) throw new Error('User ID is required');
@@ -348,6 +370,8 @@ async function checkEmail(email) {
 
 export {
   getUserById,
+  isUserAdmin,
+  getAllUsers,
   updateUserProfile,
   getUserAnalytics,
   saveChatEntry,

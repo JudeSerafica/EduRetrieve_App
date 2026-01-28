@@ -53,6 +53,18 @@ const useAuthStatus = ({
           .single();
 
         if (!existing && !checkError) {
+          console.log('🔄 useAuthStatus: Creating profile for user:', currentUser.id, currentUser.email);
+
+          // First delete any existing profile to avoid conflicts
+          const { error: deleteErr } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('id', currentUser.id);
+
+          if (deleteErr && debug) {
+            console.warn('⚠️ useAuthStatus: Profile delete warning:', deleteErr.message);
+          }
+
           const { error: insertErr } = await supabase.from('profiles').insert({
             id: currentUser.id,
             email: currentUser.email,
@@ -60,10 +72,27 @@ const useAuthStatus = ({
           });
 
           if (insertErr && debug) {
-            console.error('Insert profile error:', insertErr.message);
+            console.error('❌ useAuthStatus: Insert profile error:', insertErr.message, insertErr.code);
+            // Fallback to upsert if insert fails
+            if (insertErr.message.includes('duplicate key') || insertErr.code === '23505') {
+              console.log('🔄 useAuthStatus: Fallback to upsert');
+              const { error: upsertErr } = await supabase.from('profiles').upsert({
+                id: currentUser.id,
+                email: currentUser.email,
+                username: currentUser.user_metadata?.username || 'guest',
+              }, { onConflict: 'id' });
+
+              if (upsertErr && debug) {
+                console.error('❌ useAuthStatus: Upsert also failed:', upsertErr.message);
+              } else if (debug) {
+                console.log('✅ useAuthStatus: Profile upsert succeeded');
+              }
+            }
           } else if (debug) {
-            console.log('Profile created for new user.');
+            console.log('✅ useAuthStatus: Profile created for new user.');
           }
+        } else if (existing && debug) {
+          console.log('✅ useAuthStatus: Profile already exists for user:', currentUser.id);
         }
       }
     });

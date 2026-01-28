@@ -1,22 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
-function ProtectedRoute({ children }) {
+function AdminRoute({ children }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const checkUserRole = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
+    const checkAdminStatus = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session) {
+        setIsAuthenticated(false);
         setLoading(false);
         return;
       }
 
-      // Check if user is admin via API
+      setIsAuthenticated(true);
+
       try {
+        // Check admin status via API
         const response = await fetch('/api/admin/check', {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -33,24 +40,32 @@ function ProtectedRoute({ children }) {
       } catch (error) {
         console.error('Error checking admin status:', error);
         setIsAdmin(false);
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
-    checkUserRole();
+    checkAdminStatus();
   }, []);
 
   if (loading) {
-    return <div className="loading-full-page">Loading...</div>;
+    return (
+      <div className="admin-route-loading">
+        <div className="loading-spinner"></div>
+        <p>Verifying admin access...</p>
+      </div>
+    );
   }
 
-  // If user is admin, redirect to admin panel
-  if (isAdmin) {
-    return <Navigate to="/admin" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/dashboard/home" replace />;
   }
 
   return children;
 }
 
-export default ProtectedRoute;
+export default AdminRoute;

@@ -19,33 +19,69 @@ import Chats from './pages/Chats';
 import Saves from './pages/Saves';
 import HomePageContent from './HomePageContent';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import AuthCallback from './components/AuthCallback';
 import SearchPage from './pages/SearchPage';
 import ProgressAnalyticsPage from './pages/ProgressAnalyticsPage';
+import AdminDashboard from './pages/AdminDashboard';
+import AdminLayout from './layouts/AdminLayout';
 
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 function AuthWrapper() {
   const [loadingInitialAuth, setLoadingInitialAuth] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     console.log('🔍 App loaded successfully, current path:', window.location.pathname);
+    
     const checkAuth = async () => {
       const { data } = await supabase.auth.getSession();
       const session = data?.session;
 
       if (session?.user) {
+        // Check if user is admin via API
+        let userIsAdmin = false;
+        try {
+          const response = await fetch('/api/admin/check', {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            const adminData = await response.json();
+            userIsAdmin = adminData.isAdmin;
+          }
+        } catch (error) {
+          console.error('Error checking admin status:', error);
+        }
+
+        setIsAdmin(userIsAdmin);
+
         const currentPath = window.location.pathname;
         const isOnPublicPage =
           currentPath === '/' ||
           currentPath === '/signup' ||
-          currentPath === '/login';
-
+          currentPath === '/login' ||
+          currentPath === '/auth/callback';
 
         if (isOnPublicPage) {
+          // Redirect based on role
+          if (userIsAdmin) {
+            navigate('/admin', { replace: true });
+          } else {
+            navigate('/dashboard/home', { replace: true });
+          }
+        } else if (userIsAdmin && currentPath.startsWith('/dashboard')) {
+          // Admin trying to access user dashboard - redirect to admin
+          navigate('/admin', { replace: true });
+        } else if (!userIsAdmin && currentPath.startsWith('/admin')) {
+          // Non-admin trying to access admin - redirect to user dashboard
           navigate('/dashboard/home', { replace: true });
         }
       }
@@ -54,7 +90,38 @@ function AuthWrapper() {
 
     checkAuth();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        // Check if user is admin via API
+        let userIsAdmin = false;
+        try {
+          const response = await fetch('/api/admin/check', {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            const adminData = await response.json();
+            userIsAdmin = adminData.isAdmin;
+          }
+        } catch (error) {
+          console.error('Error checking admin status:', error);
+        }
+
+        setIsAdmin(userIsAdmin);
+
+        // Redirect if needed
+        const currentPath = window.location.pathname;
+        if (userIsAdmin && currentPath.startsWith('/dashboard')) {
+          navigate('/admin', { replace: true });
+        } else if (!userIsAdmin && currentPath.startsWith('/admin')) {
+          navigate('/dashboard/home', { replace: true });
+        }
+      } else {
+        setIsAdmin(false);
+      }
       checkAuth();
     });
 
@@ -116,6 +183,22 @@ function AuthWrapper() {
         <Route path="saves" element={<Saves />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="analytics" element={<ProgressAnalyticsPage />} />
+      </Route>
+
+      {/* Admin Routes */}
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route index element={<AdminDashboard />} />
+        <Route path="" element={<AdminDashboard />} />
+        <Route path="users" element={<AdminDashboard />} />
+        <Route path="activities" element={<AdminDashboard />} />
+        <Route path="settings" element={<AdminDashboard />} />
       </Route>
 
       {/* Catch-all 404 */}

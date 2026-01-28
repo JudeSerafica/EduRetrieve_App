@@ -12,7 +12,11 @@ import { fileURLToPath } from 'url';
 // Import chat routes
 import chatRoutes from './routes/chatRoutes.js';
 
+// Import admin routes
+import adminRoutes from './routes/adminRoutes.js';
+
 console.log('🚀 Server index.js loaded successfully');
+console.log('🔥 Loading routes...');
 
 const app = express();
 const upload = multer();
@@ -35,7 +39,6 @@ try {
   googleClient = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/auth/callback` : 'http://localhost:3000/auth/callback'
   );
 } catch (error) {
   console.warn('Failed to initialize Google OAuth client:', error.message);
@@ -55,7 +58,7 @@ try {
     service: 'gmail',
     auth: {
       user: process.env.GMAIL_USER || 'judskie198@gmail.com',
-      pass: process.env.GMAIL_APP_PASSWORD || 'xncqbcovtcstfbon',
+      pass: process.env.GMAIL_APP_PASSWORD || 'afybzhvvmoioblfu',
     },
     tls: {
       rejectUnauthorized: false
@@ -82,6 +85,220 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Mount chat routes
 app.use('/api/chat', chatRoutes);
+
+// Mount admin routes
+app.use('/api/admin', adminRoutes);
+
+// Test route
+app.get('/api/test', (req, res) => {
+  console.log('🔥 Test route hit!');
+  res.json({ message: 'Test route working!' });
+});
+
+// =========================
+// 📧 EMAIL-BASED SIGNUP ROUTES
+// =========================
+
+// Step 1: Initiate email-based signup (send verification code)
+app.post('/api/signup', async (req, res) => {
+  console.log('🔥 /api/signup route hit!', req.body);
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+  }
+
+  if (!supabase) {
+    return res.status(500).json({ error: 'Database service not initialized' });
+  }
+
+  try {
+    // Check if user already exists
+    const { data: existingUser, error: checkError } = await supabase.auth.admin.listUsers();
+    const userExists = existingUser.users.some(user => user.email === email);
+
+    if (userExists) {
+      return res.status(400).json({ error: 'User already exists. Please log in instead.' });
+    }
+
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // Store verification data
+    verificationCodes.set(email, {
+      code: verificationCode,
+      expiresAt,
+      password, // Store password temporarily
+      action: 'email-signup'
+    });
+
+    console.log('🔐 Verification code generated for email signup:', email);
+
+    // Send verification email
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #007bff; color: white; padding: 20px; text-align: center;">
+          <h1>EduRetrieve</h1>
+        </div>
+        <div style="padding: 20px; background-color: #f8f9fa;">
+          <h2>Verify Your Email</h2>
+          <p>Hi there!</p>
+          <p>Thank you for signing up for EduRetrieve. To complete your registration, please enter this verification code:</p>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: bold; letter-spacing: 3px;">
+              ${verificationCode}
+            </div>
+          </div>
+
+          <p><strong>This code will expire in 5 minutes.</strong></p>
+          <p>If you didn't request this, please ignore this email.</p>
+        </div>
+      </div>
+    `;
+
+    if (transporter) {
+      try {
+        await transporter.sendMail({
+          from: `"EduRetrieve" <${process.env.GMAIL_USER || 'judskie198@gmail.com'}>`,
+          to: email,
+          subject: 'Verify Your EduRetrieve Account',
+          html: emailHtml,
+        });
+        console.log('✅ Verification email sent to:', email);
+      } catch (emailError) {
+        console.error('❌ Email sending failed:', emailError);
+        verificationCodes.delete(email); // Clean up on email failure
+        return res.status(500).json({ error: 'Failed to send verification email' });
+      }
+    } else {
+      console.warn('Email transporter not initialized, skipping email send');
+      return res.status(500).json({ error: 'Email service not available' });
+    }
+
+    // Clean up expired codes
+    setTimeout(() => {
+      if (verificationCodes.has(email)) {
+        verificationCodes.delete(email);
+        console.log('🗑️ Expired verification code cleaned up for:', email);
+      }
+    }, 5 * 60 * 1000);
+
+    res.status(200).json({ message: 'Verification code sent to your email' });
+  } catch (error) {
+    console.error('❌ Signup initiation error:', error);
+    res.status(500).json({ error: 'Failed to initiate signup' });
+  }
+});
+
+// Step 2: Verify code and create account
+app.post('/api/verify', async (req, res) => {
+  const { email, code, password } = req.body;
+
+  if (!email || !code || !password) {
+    return res.status(400).json({ error: 'Email, verification code, and password are required' });
+  }
+
+  if (!supabase) {
+    return res.status(500).json({ error: 'Database service not initialized' });
+  }
+
+  try {
+    const verificationData = verificationCodes.get(email);
+
+    if (!verificationData) {
+      return res.status(400).json({ error: 'Verification code expired or not found. Please restart the signup process.' });
+    }
+
+    if (verificationData.action !== 'email-signup') {
+      return res.status(400).json({ error: 'Invalid verification type' });
+    }
+
+    if (Date.now() > verificationData.expiresAt) {
+      verificationCodes.delete(email);
+      return res.status(400).json({ error: 'Verification code has expired. Please restart the signup process.' });
+    }
+
+    if (verificationData.code !== code) {
+      return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
+    }
+
+    // Create user in Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        signup_method: 'email'
+      }
+    });
+
+    if (authError) {
+      console.error('❌ Supabase signup error:', authError);
+
+      if (authError.message.includes('duplicate key value')) {
+        return res.status(400).json({ error: 'User already exists. Please log in instead.' });
+      }
+
+      return res.status(400).json({ error: authError.message });
+    }
+
+    console.log('✅ Auth user created:', authData.user.id);
+
+    // Insert into profiles table
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert([{
+        id: authData.user.id,
+        email,
+        username: email.split('@')[0],
+        fullname: '',
+        pfpurl: '',
+        created_at: new Date().toISOString()
+      }]);
+
+    if (profileError) {
+      console.error('❌ Profile creation error:', profileError);
+      return res.status(400).json({ error: profileError.message });
+    }
+
+    // Create a session for the new user
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (signInError) {
+      console.error("❌ Session creation error:", signInError);
+      return res.status(400).json({ error: signInError.message });
+    }
+
+    verificationCodes.delete(email);
+
+    // Send back session so frontend can set it
+    res.status(200).json({
+      message: 'Signup completed successfully!',
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        fullName: '', // Keep camelCase for frontend compatibility
+      },
+      session: signInData.session
+    });
+
+  } catch (error) {
+    console.error('❌ Email signup verification error:', error);
+    res.status(500).json({
+      error: 'Failed to complete signup',
+      details: error.message
+    });
+  }
+});
 
 const verificationCodes = new Map();
 
@@ -1681,6 +1898,9 @@ app.get('/', (req, res) => {
     ]
   });
 });
+
+
+console.log('🔥 All routes loaded successfully');
 
 const PORT = process.env.PORT || 5000;
 

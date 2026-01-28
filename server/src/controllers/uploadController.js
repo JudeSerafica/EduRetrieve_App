@@ -2,6 +2,7 @@ import * as moduleModel from '../model/moduleModel.js';
 import { extractTextFromFile, extractFromImage } from '../utils/textExtractor.js';
 import path from 'path';
 import fs from 'fs';
+import { supabase } from '../config/supabaseClient.js';
 
 exports.uploadModule = async (req, res) => {
   try {
@@ -17,6 +18,8 @@ exports.uploadModule = async (req, res) => {
     if (!req.user || !req.user.id) {
       return res.status(401).json({ message: 'User not authenticated.' });
     }
+
+    const userId = req.user.id;
 
     let extractedContent = description; // Default to description if no file
 
@@ -45,11 +48,29 @@ exports.uploadModule = async (req, res) => {
     const newModuleData = {
       title,
       description: extractedContent,
-      uploadedBy: req.user.id,
+      user_id: userId,
     };
 
     // Save to Supabase
     const createdModule = await moduleModel.createModule(newModuleData);
+
+    // Track the module upload activity
+    try {
+      await supabase
+        .from('user_activities')
+        .insert({
+          user_id: userId,
+          activity_type: 'upload_module',
+          details: JSON.stringify({
+            moduleId: createdModule.id,
+            moduleTitle: title,
+            hasFile: !!file
+          }),
+          timestamp: new Date()
+        });
+    } catch (activityError) {
+      console.warn('Failed to track module upload activity:', activityError.message);
+    }
 
     res.status(201).json({
       message: 'Module uploaded successfully.',

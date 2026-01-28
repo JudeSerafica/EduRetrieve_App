@@ -1,14 +1,14 @@
 import { supabase } from '../config/supabaseClient.js';
 /**
  * Creates a new module record in Supabase.
- * @param {Object} moduleData The data for the new module (title, description, uploadedBy).
+ * @param {Object} moduleData The data for the new module (title, description, user_id).
  * @returns {Promise<Object>} The created module record including its ID.
  */
 async function createModule(moduleData) {
-  const { title, description, uploadedBy } = moduleData;
+  const { title, description, user_id } = moduleData;
   const { data, error } = await supabase
     .from('modules')
-    .insert([{ title, description, uploadedBy }])
+    .insert([{ title, description, user_id }])
     .select()
     .single();
 
@@ -47,7 +47,7 @@ async function getModulesByUserId(userId) {
   const { data, error } = await supabase
     .from('modules')
     .select('*')
-    .eq('uploadedBy', userId)
+    .eq('user_id', userId)
     .order('uploadedAt', { ascending: false });
 
   if (error) {
