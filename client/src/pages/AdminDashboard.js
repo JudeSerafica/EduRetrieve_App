@@ -338,7 +338,6 @@ function AdminDashboard() {
       const data = await response.json();
       if (response.ok) {
         setModules(data.modules || []);
-        setModulesByUser(data.modulesByUser || []);
       } else {
         setError(data.error || 'Failed to fetch module associations');
       }
