@@ -26,7 +26,7 @@ function ProtectedRoute({ children }) {
 
         if (response.ok) {
           const data = await response.json();
-          setIsAdmin(data.isAdmin);
+          setIsAdmin(data.isAdmin === true);
         } else {
           setIsAdmin(false);
         }

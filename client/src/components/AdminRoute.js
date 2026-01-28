@@ -15,6 +15,7 @@ function AdminRoute({ children }) {
 
       if (!session) {
         setIsAuthenticated(false);
+        setIsAdmin(false);
         setLoading(false);
         return;
       }
@@ -32,7 +33,7 @@ function AdminRoute({ children }) {
 
         if (response.ok) {
           const data = await response.json();
-          setIsAdmin(data.isAdmin);
+          setIsAdmin(data.isAdmin === true);
         } else {
           setIsAdmin(false);
         }
@@ -56,10 +57,12 @@ function AdminRoute({ children }) {
     );
   }
 
+  // If not authenticated, redirect to login
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
+  // If authenticated but not admin, redirect to user dashboard
   if (!isAdmin) {
     return <Navigate to="/dashboard/home" replace />;
   }

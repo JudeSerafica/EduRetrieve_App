@@ -15,6 +15,7 @@ function LoginPage() {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        console.log('LoginPage: User already logged in, checking role...');
         // Check if user is admin
         const { data: profileData } = await supabase
           .from('profiles')
@@ -22,9 +23,12 @@ function LoginPage() {
           .eq('id', user.id)
           .single();
 
+        console.log('LoginPage: Profile data:', profileData);
         if (profileData?.role === 'admin') {
+          console.log('LoginPage: Redirecting admin to /admin');
           navigate('/admin');
         } else {
+          console.log('LoginPage: Redirecting user to /dashboard/home');
           navigate('/dashboard/home');
         }
       }
@@ -86,7 +90,7 @@ function LoginPage() {
         if (response.ok) {
           const adminData = await response.json();
           isAdmin = adminData.isAdmin;
-          console.log('Admin check result:', isAdmin);
+          console.log('Admin check result:', isAdmin, 'Full response:', adminData);
         } else {
           const errorData = await response.json().catch(() => ({}));
           console.log('Admin check error:', errorData);
@@ -95,10 +99,12 @@ function LoginPage() {
         console.error('Error checking admin status:', error);
       }
 
-      console.log('Final isAdmin:', isAdmin);
+      console.log('Final isAdmin:', isAdmin, 'User ID:', data.user.id, 'Email:', data.user.email);
       if (isAdmin) {
+        console.log('Login redirecting admin to /admin');
         navigate('/admin');
       } else {
+        console.log('Login redirecting user to /dashboard/home');
         navigate('/dashboard/home');
       }
 

@@ -89,7 +89,9 @@ function AuthWrapper() {
     checkAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('App: Auth state changed, event:', _event, 'session exists:', !!session);
       if (session?.user) {
+        console.log('App: Auth state change - user logged in');
         // Check if user is admin via API
         let userIsAdmin = false;
         try {
@@ -103,20 +105,26 @@ function AuthWrapper() {
           if (response.ok) {
             const adminData = await response.json();
             userIsAdmin = adminData.isAdmin;
+            console.log('App: Auth change admin check result:', userIsAdmin);
           }
         } catch (error) {
-          console.error('Error checking admin status:', error);
+          console.error('App: Auth change error checking admin status:', error);
         }
 
         // Redirect if needed
         const currentPath = window.location.pathname;
+        console.log('App: Auth change current path:', currentPath);
         if (userIsAdmin && currentPath.startsWith('/dashboard')) {
+          console.log('App: Auth change - admin on user dashboard, redirecting to /admin');
           navigate('/admin', { replace: true });
         } else if (!userIsAdmin && currentPath.startsWith('/admin')) {
+          console.log('App: Auth change - non-admin on admin page, redirecting to /dashboard/home');
           navigate('/dashboard/home', { replace: true });
         }
-      } 
-      
+      } else {
+        console.log('App: Auth state change - user logged out');
+      }
+
       checkAuth();
     });
 

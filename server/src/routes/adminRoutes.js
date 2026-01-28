@@ -441,9 +441,133 @@ router.get('/activities/today', verifyAdmin, async (req, res) => {
   }
 });
 
-// Check admin status
-router.get('/check', verifyAdmin, async (req, res) => {
-  res.json({ isAdmin: true });
+// Check admin status (for any authenticated user)
+router.get('/check', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ isAdmin: false, error: 'No authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the user with Supabase Auth
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return res.status(401).json({ isAdmin: false, error: 'Invalid token' });
+    }
+
+    console.log('Checking admin status for user:', user.id, user.email);
+
+    // Check if user has admin role
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, email, fullname')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      // Profile might not exist, treat as non-admin
+      console.warn('Profile not found for user:', user.id, profileError);
+      return res.json({ isAdmin: false, error: 'Profile not found' });
+    }
+
+    console.log('User profile:', profile);
+    const isAdmin = profile && profile.role === 'admin';
+    console.log('Is admin:', isAdmin, 'Role:', profile?.role);
+    res.json({ isAdmin, role: profile?.role });
+  } catch (error) {
+    console.error('Admin check error:', error);
+    res.status(500).json({ isAdmin: false, error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check user profile
+router.get('/debug-profile', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the user with Supabase Auth
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    // Get full profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      return res.status(404).json({ 
+        error: 'Profile not found',
+        userId: user.id,
+        userEmail: user.email
+      });
+    }
+
+    res.json({ 
+      user: {
+        id: user.id,
+        email: user.email
+      },
+      profile
+    });
+  } catch (error) {
+    console.error('Debug profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Set admin role for current user (for testing)
+router.post('/set-admin-role', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the user with Supabase Auth
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    console.log('Setting admin role for user:', user.id, user.email);
+
+    // Update or create profile with admin role
+    const { error: upsertError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: user.email,
+        role: 'admin',
+        updated_at: new Date().toISOString()
+      });
+
+    if (upsertError) {
+      console.error('Error setting admin role:', upsertError);
+      return res.status(500).json({ error: 'Failed to set admin role: ' + upsertError.message });
+    }
+
+    console.log('Admin role set successfully for:', user.email);
+    res.json({ success: true, message: 'Admin role set successfully' });
+  } catch (error) {
+    console.error('Set admin role error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
