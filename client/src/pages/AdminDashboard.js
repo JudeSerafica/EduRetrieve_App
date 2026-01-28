@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import '../styles/App.css';
 
@@ -37,53 +37,52 @@ function AdminDashboard() {
 
   // Get session on mount
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      if (session) {
-        checkAdminStatus();
-      }
-    };
-    getSession();
+  const getSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    setSession(session);
+    if (session) {
+      checkAdminStatus();
+    }
+  };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+  getSession();
+
+  const { data: { subscription } } =
+    supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
         checkAdminStatus();
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+  return () => subscription.unsubscribe();
+}, [checkAdminStatus]); // ✅ FIXED
 
-  const checkAdminStatus = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        return;
+
+  const checkAdminStatus = useCallback(async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) return;
+
+    const response = await fetch('/api/admin/check', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.isAdmin) {
+        fetchDashboardData(session.access_token);
       }
-
-      // Check admin status via API
-      const response = await fetch('/api/admin/check', {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.isAdmin) {
-          fetchDashboardData(session.access_token);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking admin status:', error);
     }
-  };
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+  }
+}, []); // add deps here if needed
+
 
   const fetchDashboardData = async (token, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
