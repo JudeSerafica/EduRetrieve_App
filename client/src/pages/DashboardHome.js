@@ -326,9 +326,12 @@ function Dashboard() {
           const {
             data: { session },
           } = await supabase.auth.getSession();
-    
+
+          console.log('🔍 Client session:', { userId: session?.user?.id, expiresAt: session?.expires_at });
+
           const token = session?.access_token;
           if (!token) throw new Error('Missing auth token');
+          console.log('🔑 Using token for upload');
     
           setUploadProgress(20);
           setMessage('📤 Preparing upload...');

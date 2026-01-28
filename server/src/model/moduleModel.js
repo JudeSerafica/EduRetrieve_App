@@ -14,7 +14,8 @@ async function createModule(moduleData) {
 
   if (error) {
     console.error('Error creating module:', error);
-    throw new Error('Could not create module.');
+    console.error('Module data attempted:', { title, description, user_id });
+    throw new Error(error.message || 'Could not create module.');
   }
 
   return data;

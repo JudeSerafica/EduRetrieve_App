@@ -250,21 +250,35 @@ app.post('/api/verify', async (req, res) => {
 
     console.log('✅ Auth user created:', authData.user.id);
 
-    // Insert into profiles table
-    const { error: profileError } = await supabase
+    // Check if profile already exists
+    const { data: existingProfile } = await supabase
       .from('profiles')
-      .insert([{
-        id: authData.user.id,
-        email,
-        username: email.split('@')[0],
-        fullname: '',
-        pfpurl: '',
-        created_at: new Date().toISOString()
-      }]);
+      .select('id')
+      .eq('id', authData.user.id)
+      .single();
 
-    if (profileError) {
-      console.error('❌ Profile creation error:', profileError);
-      return res.status(400).json({ error: profileError.message });
+    if (!existingProfile) {
+      // Create profile in database only if it doesn't exist
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([{
+          id: authData.user.id,
+          email,
+          username: email.split('@')[0],
+          fullname: '',
+          pfpurl: '',
+          created_at: new Date().toISOString()
+        }]);
+
+      if (profileError) {
+        console.error('❌ Profile creation error:', profileError);
+        // Don't fail the entire signup if profile creation fails
+        console.warn('⚠️ Continuing signup despite profile creation failure:', profileError.message);
+      } else {
+        console.log('✅ Profile created successfully');
+      }
+    } else {
+      console.log('ℹ️ Profile already exists, skipping creation');
     }
 
     // Create a session for the new user

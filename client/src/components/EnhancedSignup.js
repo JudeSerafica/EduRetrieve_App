@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import API_BASE_URL from '../config';
 
@@ -11,8 +10,6 @@ const EnhancedSignup = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -147,64 +144,6 @@ const EnhancedSignup = () => {
 
       console.log('✅ Verification successful!');
 
-      // Force profile creation on client side
-      console.log('🔄 Ensuring profile exists for user:', result.user?.id);
-      if (result.user?.id) {
-        try {
-          // First delete any existing profile to avoid conflicts
-          console.log('🗑️ Deleting any existing profile for user:', result.user.id);
-          const { error: deleteError } = await supabase
-            .from('profiles')
-            .delete()
-            .eq('id', result.user.id);
-
-          if (deleteError) {
-            console.warn('⚠️ Profile delete warning:', deleteError.message);
-          }
-
-          // Now create the profile
-          console.log('📝 Creating profile via client...');
-          const { error: profileErr } = await supabase
-            .from('profiles')
-            .insert({
-              id: result.user.id,
-              email: result.user.email,
-              username: result.user.email.split('@')[0],
-              fullName: '',
-              pfpurl: '',
-              created_at: new Date().toISOString()
-            });
-
-          if (profileErr) {
-            console.error('❌ Client profile creation error:', profileErr);
-            // Fallback to upsert if insert fails
-            if (profileErr.message.includes('duplicate key') || profileErr.code === '23505') {
-              console.log('🔄 Fallback: Using upsert for profile creation');
-              const { error: upsertErr } = await supabase
-                .from('profiles')
-                .upsert({
-                  id: result.user.id,
-                  email: result.user.email,
-                  username: result.user.email.split('@')[0],
-                  fullName: '',
-                  pfpurl: '',
-                  created_at: new Date().toISOString()
-                }, { onConflict: 'id' });
-
-              if (upsertErr) {
-                console.error('❌ Client profile upsert also failed:', upsertErr);
-              } else {
-                console.log('✅ Client profile upsert succeeded');
-              }
-            }
-          } else {
-            console.log('✅ Client profile created successfully');
-          }
-        } catch (profileError) {
-          console.error('❌ Profile creation attempt failed:', profileError);
-        }
-      }
-
       setStep('completed');
       setMessage('Signup completed successfully! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
@@ -226,8 +165,6 @@ const EnhancedSignup = () => {
     setError('');
     setMessage('');
     setTimeRemaining(0);
-    setShowPassword(false);
-    setShowConfirmPassword(false);
   };
 
   const formatTime = (seconds) => {
@@ -260,48 +197,28 @@ return (
 
           <div className="form-group">
             <label>Password:</label>
-            <div className="password-input-container">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={loading}
-              >
-                {showPassword ? <FaEyeSlash /> : <FaEye />}
-              </button>
-            </div>
+            <input
+              type="password"
+              placeholder="Enter password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              disabled={loading}
+            />
           </div>
 
           <div className="form-group">
             <label>Confirm Password:</label>
-            <div className="password-input-container">
-              <input
-                type={showConfirmPassword ? 'text' : 'password'}
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={6}
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                disabled={loading}
-              >
-                {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
-              </button>
-            </div>
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={6}
+              disabled={loading}
+            />
           </div>
 
           {loading && (

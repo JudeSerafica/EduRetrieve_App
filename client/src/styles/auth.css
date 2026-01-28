@@ -78,31 +78,72 @@
 
 .password-input-container {
   position: relative;
+  width: 100%;
 }
 
+/* input */
 .password-input-container input {
-  padding-right: 40px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.password-toggle {
+/* DISABLE hover animation */
+.password-input-container > .password-toggle:hover {
+  transform: translateY(-50%) !important;
+}
+.password-input-container {
+  position: relative;
+  width: 100%;
+}
+
+/* input */
+.password-input-container input {
+  width: 100%;
+  padding-right: 50px;
+  box-sizing: border-box;
+}
+
+/* EYE BUTTON — FULL RESET */
+.password-input-container > .password-toggle {
+  all: unset;              /* 💣 nukes ALL button styles */
   position: absolute;
-  right: 12px;
-  top: 0;
-  height: 100%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  color: transparent;
-  padding: 0;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%) !important;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  width: auto;
+
+  cursor: pointer;
+  z-index: 2;
+}
+
+/* ICON */
+.password-input-container > .password-toggle svg {
+  font-size: 18px;
+  color: #444;
+}
+
+/* DISABLE hover animation */
+.password-input-container > .password-toggle:hover {
+  transform: translateY(-50%) !important;
+}
+
+button:not(.password-toggle):hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:not(.password-toggle):active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.password-toggle svg {
+  pointer-events: pointer;
 }
 
 .password-toggle:hover {
-  color: #333;
+  color: #000;
 }
 
 .password-toggle:disabled {
@@ -110,28 +151,28 @@
   opacity: 0.5;
 }
 
-/* Button Styles */
 button {
-  width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.3s ease;
-  margin-bottom: 10px;
+    padding: 10px 20px;
+    font-size: 1em;
+    right: 50px;
+    border-radius: 8px;
+    background-color: transparent;
+    cursor: pointer;
+    border: none;
 }
 
 button:hover:not(:disabled) {
-  opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+    background-color: #cccccc;
+    cursor: not-allowed;
+    box-shadow: none;
 }
 
 .secondary-button {

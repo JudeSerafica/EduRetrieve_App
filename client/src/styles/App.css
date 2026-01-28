@@ -10,29 +10,6 @@ html, body, #root, .App {
     -moz-osx-font-smoothing: grayscale;
 }
 
-button {
-    padding: 10px 20px;
-    font-size: 1em;
-    border-radius: 8px;
-    cursor: pointer;
-    border: none;
-    transition: background-color 0.3s ease, transform 0.1s ease;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-}
-
-button:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-    box-shadow: none;
-}
 
 .auth-container {
     display: flex;
@@ -2174,6 +2151,16 @@ p#message, .auth-form-card .auth-message.success {
   border-radius: 10px;
   border: 1px solid #ccc;
   width: 220px;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 1em;
+    right: 50px;
+    border-radius: 8px;
+    background-color: transparent;
+    cursor: pointer;
+    border: none;
 }
 
 .floating-upload-button {
@@ -5215,8 +5202,8 @@ p#message, .auth-form-card .auth-message.success {
   gap: 15px;
   width: 100%;
   padding: 14px 20px;
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
+  background-color: #00152965;
+  color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -5225,8 +5212,8 @@ p#message, .auth-form-card .auth-message.success {
 }
 
 .admin-logout-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  background-color: #c0392b;
+  color: white;
 }
 
 /* Mobile Toggle Button */
@@ -5309,6 +5296,159 @@ p#message, .auth-form-card .auth-message.success {
 
   .admin-main-content {
     padding: 70px 15px 15px;
+  }
+}
+
+/* Logout Modal Styles */
+.logout-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.logout-modal {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.logout-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px 24px 0;
+}
+
+.logout-modal-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-size: 28px;
+}
+
+.logout-modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.logout-modal-close:hover {
+  color: #374151;
+}
+
+.logout-modal-body {
+  padding: 20px 24px;
+  text-align: center;
+}
+
+.logout-modal-body h2 {
+  margin: 0 0 12px 0;
+  font-size: 1.5rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+.logout-modal-body p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.logout-modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px 24px;
+}
+
+.logout-modal-cancel,
+.logout-modal-confirm {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.logout-modal-cancel {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.logout-modal-cancel:hover {
+  background-color: #e5e7eb;
+}
+
+.logout-modal-confirm {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.logout-modal-confirm:hover {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 480px) {
+  .logout-modal {
+    width: 95%;
+    margin: 16px;
+  }
+
+  .logout-modal-header {
+    padding: 20px 20px 0;
+  }
+
+  .logout-modal-body {
+    padding: 16px 20px;
+  }
+
+  .logout-modal-footer {
+    padding: 0 20px 20px;
   }
 }
 

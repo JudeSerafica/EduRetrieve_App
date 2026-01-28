@@ -16,10 +16,12 @@ exports.uploadModule = async (req, res) => {
 
     // Validate authentication (req.user.id from Supabase JWT middleware)
     if (!req.user || !req.user.id) {
+      console.error('❌ Authentication failed: req.user or req.user.id missing', { user: req.user });
       return res.status(401).json({ message: 'User not authenticated.' });
     }
 
     const userId = req.user.id;
+    console.log('🔍 Upload attempt by user ID:', userId);
 
     let extractedContent = description; // Default to description if no file
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Outlet, Link } from 'react-router-dom';
 import { FaUsers, FaChartBar, FaCog, FaSignOutAlt, FaUserShield, FaFileAlt, FaBell } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
+import LogoutModal from '../components/LogoutModal';
 import '../styles/App.css';
 
 function AdminLayout() {
@@ -9,6 +10,7 @@ function AdminLayout() {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isOpen, setIsOpen] = useState(!isMobile);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const navigate = useNavigate();
 
   const menuItems = [
@@ -67,7 +69,11 @@ function AdminLayout() {
     return () => window.removeEventListener('resize', handleResize);
   }, [isOpen]);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
     try {
       await supabase.auth.signOut();
       console.log('Admin logged out');
@@ -75,6 +81,7 @@ function AdminLayout() {
     } catch (error) {
       console.error('Logout error:', error.message);
     }
+    setShowLogoutModal(false);
   };
 
   if (loading) {
@@ -127,6 +134,13 @@ function AdminLayout() {
           </button>
         </div>
       </aside>
+
+      {/* Logout Modal */}
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
 
       {/* Mobile Toggle Button */}
       {isMobile && !isOpen && (
