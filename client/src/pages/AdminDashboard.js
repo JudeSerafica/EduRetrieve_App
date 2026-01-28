@@ -35,6 +35,74 @@ function AdminDashboard() {
   // Sorting configuration for Users table
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' });
 
+  const fetchDashboardData = useCallback(async (token, showRefresh = false) => {
+  if (showRefresh) setRefreshing(true);
+  setError('');
+  setSuccess('');
+  try {
+    console.log('Fetching dashboard data via API...');
+    
+    const endpoints = [
+      { name: 'summary', url: '/api/admin/summary' },
+      { name: 'users', url: '/api/admin/users' },
+      { name: 'modules', url: '/api/admin/modules' },
+      { name: 'activities', url: '/api/admin/activities?limit=200' },
+      { name: 'todayActivities', url: '/api/admin/activities/today' }
+    ];
+
+    const results = await Promise.all(
+      endpoints.map(ep => 
+        fetch(ep.url, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(res => res.json())
+      )
+    );
+
+    const summaryData = results[0];
+    const usersData = results[1];
+    const modulesData = results[2];
+    const activitiesData = results[3];
+    const todayActivitiesData = results[4];
+
+    if (summaryData.summary) setSummary(summaryData.summary);
+    if (usersData.users) setUsers(usersData.users);
+    if (modulesData.modules) setModules(modulesData.modules);
+    if (activitiesData.activities) setActivities(activitiesData.activities);
+    if (todayActivitiesData.activities) setTodayActivities(todayActivitiesData.activities);
+
+    fetchAvailableUsers();
+
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error);
+    setError('Failed to load dashboard data: ' + error.message);
+  } finally {
+    setRefreshing(false);
+  }
+}, []);
+
+  const checkAdminStatus = useCallback(async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const response = await fetch('/api/admin/check', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.isAdmin) {
+        fetchDashboardData(session.access_token);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+  }
+}, [fetchDashboardData]); // ✅ CORRECT
+
   // Get session on mount
   useEffect(() => {
   const getSession = async () => {
@@ -57,88 +125,6 @@ function AdminDashboard() {
 
   return () => subscription.unsubscribe();
 }, [checkAdminStatus]); // ✅ FIXED
-
-
-  const checkAdminStatus = useCallback(async () => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) return;
-
-    const response = await fetch('/api/admin/check', {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.isAdmin) {
-        fetchDashboardData(session.access_token);
-      }
-    }
-  } catch (error) {
-    console.error('Error checking admin status:', error);
-  }
-}, []); // add deps here if needed
-
-
-  const fetchDashboardData = async (token, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    setError('');
-    setSuccess('');
-    try {
-      console.log('Fetching dashboard data via API...');
-      
-      // Fetch data from admin API (uses service role on server)
-      const endpoints = [
-        { name: 'summary', url: '/api/admin/summary' },
-        { name: 'users', url: '/api/admin/users' },
-        { name: 'modules', url: '/api/admin/modules' },
-        { name: 'activities', url: '/api/admin/activities?limit=200' },
-        { name: 'todayActivities', url: '/api/admin/activities/today' }
-      ];
-
-      const results = await Promise.all(
-        endpoints.map(ep => 
-          fetch(ep.url, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then(res => res.json())
-        )
-      );
-
-      const summaryData = results[0];
-      const usersData = results[1];
-      const modulesData = results[2];
-      const activitiesData = results[3];
-      const todayActivitiesData = results[4];
-
-      console.log('Summary:', summaryData);
-      console.log('Users count:', usersData.users?.length || 0);
-      console.log('Users with modulesCount:', usersData.users?.map(u => ({ email: u.email, modulesCount: u.modulesCount })) || []);
-      console.log('Modules count:', modulesData.modules?.length || 0);
-      console.log('Activities count:', activitiesData.activities?.length || 0);
-
-      if (summaryData.summary) setSummary(summaryData.summary);
-      if (usersData.users) {
-        console.log('Setting users state with modulesCount...');
-        setUsers(usersData.users);
-      }
-      if (modulesData.modules) setModules(modulesData.modules);
-      if (activitiesData.activities) setActivities(activitiesData.activities);
-      if (todayActivitiesData.activities) setTodayActivities(todayActivitiesData.activities);
-
-      // Also fetch available users for dropdowns
-      fetchAvailableUsers();
-
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setError('Failed to load dashboard data: ' + error.message);
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   // Handle sorting for Users table
   const handleSort = (key) => {
