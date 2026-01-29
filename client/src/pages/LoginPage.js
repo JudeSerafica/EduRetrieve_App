@@ -98,7 +98,7 @@ function LoginPage() {
           // FALLBACK: Check admin status directly from Supabase profile
           console.log('API failed, checking admin status via Supabase profile...');
           try {
-            const { data: profileData, error: profileError } = await supabase
+            const { data: profileData } = await supabase
               .from('profiles')
               .select('role')
               .eq('id', data.user.id)
@@ -120,7 +120,7 @@ function LoginPage() {
         // FALLBACK: Check admin status directly from Supabase profile
         console.log('API call failed, checking admin status via Supabase profile...');
         try {
-          const { data: profileData, error: profileError } = await supabase
+          const { data: profileData } = await supabase
             .from('profiles')
             .select('role')
             .eq('id', data.user.id)
