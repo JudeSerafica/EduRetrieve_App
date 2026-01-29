@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
+import { api } from '../api';
 import '../styles/App.css';
 
 function AdminDashboard() {
@@ -52,9 +53,9 @@ function AdminDashboard() {
 
     const results = await Promise.all(
       endpoints.map(ep => 
-        fetch(ep.url, {
+        api.get(ep.url, {
           headers: { Authorization: `Bearer ${token}` },
-        }).then(res => res.json())
+        })
       )
     );
 
@@ -212,28 +213,21 @@ function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/users/${userId}/role`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(`User role updated to ${newRole}`);
-        fetchDashboardData(session.access_token);
-      } else {
-        setError(data.error || 'Failed to update role');
-      }
+      await api.put(`/api/admin/users/${userId}/role`, 
+        { role: newRole },
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+      setSuccess(`User role updated to ${newRole}`);
+      fetchDashboardData(session.access_token);
     } catch (error) {
       console.error('Error updating role:', error);
-      setError('Failed to update user role');
+      setError('Failed to update user role: ' + error.message);
     }
   };
-
   const handleDeleteUser = async (userId, userEmail) => {
     try {
       setError('');
@@ -245,20 +239,15 @@ function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
+      const response = await api.delete(`/api/admin/users/${userId}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(data.message);
+      if (response) {
+        setSuccess(response.message || 'User deleted successfully');
         fetchDashboardData(session.access_token);
-      } else {
-        setError(data.error || 'Failed to delete user');
       }
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -279,21 +268,13 @@ function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/modules/${moduleId}`, {
-        method: 'DELETE',
+      const response = await api.delete(`/api/admin/modules/${moduleId}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
       });
-
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(data.message);
-        fetchDashboardData(session.access_token);
-      } else {
-        setError(data.error || 'Failed to delete module');
-      }
+      setSuccess(response.message || 'Module deleted successfully');
+      fetchDashboardData(session.access_token);
     } catch (error) {
       console.error('Error deleting module:', error);
       setError('Failed to delete module: ' + error.message);
@@ -310,17 +291,13 @@ function AdminDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('/api/admin/available-users', {
+      const response = await api.get('/api/admin/available-users', {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setAvailableUsers(data.users || []);
-      }
+      setAvailableUsers(response.users || []);
     } catch (error) {
       console.error('Error fetching available users:', error);
     }
@@ -336,22 +313,16 @@ function AdminDashboard() {
       if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`;
       if (filterUserId) url += `userId=${encodeURIComponent(filterUserId)}`;
 
-      const response = await fetch(url, {
+      const response = await api.get(url, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setModules(data.modules || []);
-      } else {
-        setError(data.error || 'Failed to fetch module associations');
-      }
+      setModules(response.modules || []);
     } catch (error) {
       console.error('Error fetching module associations:', error);
-      setError('Failed to fetch module associations');
+      setError('Failed to fetch module associations: ' + error.message);
     }
   };
 
@@ -397,24 +368,15 @@ function AdminDashboard() {
         return;
       }
 
-      const response = await fetch('/api/admin/module-user-associations', {
-        method: 'POST',
+      await api.post('/api/admin/module-user-associations', formData, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
       });
-
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(data.message);
-        setShowCreateModal(false);
-        fetchModuleUserAssociations();
-        fetchDashboardData(session.access_token);
-      } else {
-        setError(data.error || 'Failed to create association');
-      }
+      setSuccess('Association created successfully');
+      setShowCreateModal(false);
+      fetchModuleUserAssociations();
+      fetchDashboardData(session.access_token);
     } catch (error) {
       console.error('Error creating association:', error);
       setError('Failed to create association: ' + error.message);
@@ -438,23 +400,17 @@ function AdminDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/admin/module-user-associations/${formData.moduleId}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: formData.userId }),
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setSuccess(data.message);
-        setShowReassignModal(false);
-        fetchModuleUserAssociations();
-      } else {
-        setError(data.error || 'Failed to reassign module');
-      }
+      await api.put(`/api/admin/module-user-associations/${formData.moduleId}`, 
+        { userId: formData.userId },
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+      setSuccess('Module reassigned successfully');
+      setShowReassignModal(false);
+      fetchModuleUserAssociations();
     } catch (error) {
       console.error('Error reassigning module:', error);
       setError('Failed to reassign module: ' + error.message);
