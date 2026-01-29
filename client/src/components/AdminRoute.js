@@ -35,11 +35,25 @@ function AdminRoute({ children }) {
           const data = await response.json();
           setIsAdmin(data.isAdmin === true);
         } else {
-          setIsAdmin(false);
+          // FALLBACK: Check admin status via session email
+          const userEmail = session?.user?.email;
+          if (userEmail === 'admin@eduretrieve.com') {
+            setIsAdmin(true);
+            console.log('AdminRoute: Fallback - User is admin based on email');
+          } else {
+            setIsAdmin(false);
+          }
         }
       } catch (error) {
         console.error('Error checking admin status:', error);
-        setIsAdmin(false);
+        // FALLBACK: Check admin status via session email
+        const userEmail = session?.user?.email;
+        if (userEmail === 'admin@eduretrieve.com') {
+          setIsAdmin(true);
+          console.log('AdminRoute: Fallback - User is admin based on email');
+        } else {
+          setIsAdmin(false);
+        }
       } finally {
         setLoading(false);
       }

@@ -91,12 +91,16 @@ function AuthWrapper() {
           currentPath === '/auth/callback';
 
         if (isOnPublicPage) {
-          // Redirect based on role
-          if (userIsAdmin) {
-            navigate('/admin', { replace: true });
-          } else {
-            navigate('/dashboard/home', { replace: true });
+          // Don't auto-redirect from landing page - let user see it first
+          // Only redirect from /login or /signup if already logged in
+          if (currentPath === '/login' || currentPath === '/signup') {
+            if (userIsAdmin) {
+              navigate('/admin', { replace: true });
+            } else {
+              navigate('/dashboard/home', { replace: true });
+            }
           }
+          // For '/' (landing page), don't redirect - show landing page first
         } else if (userIsAdmin && currentPath.startsWith('/dashboard')) {
           // Admin trying to access user dashboard - redirect to admin
           navigate('/admin', { replace: true });

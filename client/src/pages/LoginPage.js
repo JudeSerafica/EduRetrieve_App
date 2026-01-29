@@ -12,28 +12,8 @@ function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        console.log('LoginPage: User already logged in, checking role...');
-        // Check if user is admin
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        console.log('LoginPage: Profile data:', profileData);
-        if (profileData?.role === 'admin') {
-          console.log('LoginPage: Redirecting admin to /admin');
-          navigate('/admin');
-        } else {
-          console.log('LoginPage: Redirecting user to /dashboard/home');
-          navigate('/dashboard/home');
-        }
-      }
-    };
-    checkUser();
+    // Don't auto-redirect - let user see login page first
+    // They can click logout to switch accounts if needed
   }, [navigate]);
 
 
