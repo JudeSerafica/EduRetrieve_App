@@ -45,12 +45,28 @@ try {
 }
 
 try {
-  supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dcepfndjsmktrfcelvgs.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjZXBmbmRqc21rdHJmY2VsdmdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTAwMDkxNiwiZXhwIjoyMDY2NTc2OTE2fQ.uSduSDirvbRdz5_2ySrVTp_sYPGcg6ddP6_XfMDZZKQ'
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dcepfndjsmktrfcelvgs.supabase.co';
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjZXBmbmRqc21rdHJmY2VsdmdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTAwMDkxNiwiZXhwIjoyMDY2NTc2OTE2fQ.uSduSDirvbRdz5_2ySrVTp_sYPGcg6ddP6_XfMDZZKQ';
+  
+  console.log('🔧 Supabase configuration:');
+  console.log('   - URL configured:', supabaseUrl ? 'Yes' : 'No');
+  console.log('   - Key configured:', supabaseKey ? 'Yes (length: ' + supabaseKey.length + ')' : 'No');
+  
+  supabase = createClient(supabaseUrl, supabaseKey);
+  
+  // Test Supabase connection
+  supabase.auth.getSession().then(({ data, error }) => {
+    if (error) {
+      console.warn('⚠️ Supabase connection test failed:', error.message);
+    } else {
+      console.log('✅ Supabase client initialized successfully');
+    }
+  }).catch(err => {
+    console.warn('⚠️ Supabase connection test error:', err.message);
+  });
 } catch (error) {
-  console.warn('Failed to initialize Supabase client:', error.message);
+  console.error('❌ Failed to initialize Supabase client:', error);
+  supabase = null;
 }
 
 try {
