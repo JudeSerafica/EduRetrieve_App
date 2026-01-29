@@ -12,6 +12,10 @@ function AdminDashboard() {
   const [session, setSession] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Selected user for chart details
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUserModules, setSelectedUserModules] = useState([]);
 
   // Modules by User - Search and Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -168,6 +172,33 @@ function AdminDashboard() {
       return <span className="sort-icon">↕</span>;
     }
     return <span className="sort-icon active">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  // Handle user click from bar graph
+  const handleUserClick = async (user) => {
+    if (selectedUser?.id === user.id) {
+      // Deselect if clicking same user
+      setSelectedUser(null);
+      setSelectedUserModules([]);
+    } else {
+      setSelectedUser(user);
+      setSelectedUserModules([]);
+      
+      // Fetch user's modules
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        
+        // Filter modules from the existing modules array
+        const userModules = modules.filter(m => 
+          m.user_id === user.id || 
+          m.profiles?.id === user.id
+        );
+        setSelectedUserModules(userModules);
+      } catch (err) {
+        console.error('Error fetching user modules:', err);
+      }
+    }
   };
 
   const handleUpdateRole = async (userId, newRole) => {
@@ -451,21 +482,6 @@ function AdminDashboard() {
     return date.toLocaleString();
   };
 
-  const formatRelativeTime = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    return formatDate(dateString);
-  };
-
   if (!session) {
     return (
       <div className="admin-dashboard-container">
@@ -702,10 +718,86 @@ function AdminDashboard() {
                   <p className="stat-number">{summary?.totalModules || 0}</p>
                 </div>
               </div>
-
             </div>
 
-
+            {/* User Module Upload Bar Graph */}
+            <div className="admin-section">
+              <h2>📊 User Module Uploads</h2>
+              <div className="horizontal-bar-graph-container">
+                <div className="bar-graph-section">
+                  <div className="bar-graph-scroll">
+                    {users.length > 0 ? (
+                      <div className="bar-graph-container">
+                        {users
+                          .sort((a, b) => (b.modulesCount || 0) - (a.modulesCount || 0))
+                          .map((user, index) => {
+                            const maxModules = Math.max(...users.map(u => u.modulesCount || 0), 1);
+                            const percentage = ((user.modulesCount || 0) / maxModules) * 100;
+                            return (
+                              <div 
+                                key={user.id || index} 
+                                className={`bar-graph-item ${selectedUser?.id === user.id ? 'selected' : ''}`}
+                                onClick={() => handleUserClick(user)}
+                              >
+                                <div className="bar-label">
+                                  <span className="user-name">{user.fullname || user.email?.split('@')[0] || 'Unknown'}</span>
+                                  <span className="module-count">{user.modulesCount || 0} modules</span>
+                                </div>
+                                <div className="bar-track">
+                                  <div 
+                                    className="bar-fill" 
+                                    style={{ width: `${percentage}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    ) : (
+                      <p className="no-data">No user data available</p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* User Details Panel */}
+                <div className="user-details-panel">
+                  {selectedUser ? (
+                    <div className="user-details-content">
+                      <h3>👤 User Details</h3>
+                      <div className="user-info">
+                        <p><strong>Name:</strong> {selectedUser.fullname || 'N/A'}</p>
+                        <p><strong>Email:</strong> {selectedUser.email || 'N/A'}</p>
+                        <p><strong>Role:</strong> <span className={`role-badge ${selectedUser.role}`}>{selectedUser.role || 'user'}</span></p>
+                        <p><strong>Modules:</strong> {selectedUser.modulesCount || 0}</p>
+                        <p><strong>Joined:</strong> {selectedUser.created_at ? formatDate(selectedUser.created_at) : 'N/A'}</p>
+                      </div>
+                      <h4>📁 Recent Modules</h4>
+                      {selectedUserModules.length > 0 ? (
+                        <ul className="user-modules-list">
+                          {selectedUserModules.slice(0, 5).map(module => (
+                            <li key={module.id}>
+                              <span className="module-title">{module.title}</span>
+                              <span className="module-date">{formatDate(module.created_at)}</span>
+                            </li>
+                          ))}
+                          {selectedUserModules.length > 5 && (
+                            <li className="more-modules">
+                              +{selectedUserModules.length - 5} more modules
+                            </li>
+                          )}
+                        </ul>
+                      ) : (
+                        <p className="no-modules">No modules found</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="no-user-selected">
+                      <p>👈 Click on a bar to view user details</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

@@ -5712,6 +5712,287 @@ button {
   margin: 0;
 }
 
+/* User Modules Bar Graph */
+.modules-bar-graph {
+  margin-top: 20px;
+}
+
+.bar-graph-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bar-graph-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.module-count {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.bar-track {
+  height: 24px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3458bb 0%, #5b7cdd 100%);
+  border-radius: 12px;
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+
+/* Horizontal Bar Graph Container */
+.horizontal-bar-graph-container {
+  display: flex;
+  gap: 20px;
+  min-height: 400px;
+}
+
+.bar-graph-section {
+  flex: 2;
+  min-width: 0;
+}
+
+.bar-graph-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.bar-graph-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.bar-graph-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.bar-graph-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.bar-graph-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.bar-graph-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bar-graph-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f8fafc;
+  border: 2px solid transparent;
+}
+
+.bar-graph-item:hover {
+  background: #e2e8f0;
+  transform: translateX(5px);
+}
+
+.bar-graph-item.selected {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.module-count {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.bar-track {
+  height: 24px;
+  background: #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+  border-radius: 12px;
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+
+.bar-graph-item.selected .bar-fill {
+  background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+}
+
+/* User Details Panel */
+.user-details-panel {
+  flex: 1;
+  min-width: 300px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.user-details-content h3 {
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+  color: #1e293b;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.user-info {
+  margin-bottom: 20px;
+}
+
+.user-info p {
+  margin: 8px 0;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.user-info strong {
+  color: #1e293b;
+}
+
+.user-details-content h4 {
+  margin: 15px 0 10px 0;
+  font-size: 1rem;
+  color: #1e293b;
+}
+
+.user-modules-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.user-modules-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.85rem;
+}
+
+.user-modules-list li:last-child {
+  border-bottom: none;
+}
+
+.user-modules-list .module-title {
+  color: #1e293b;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
+.user-modules-list .module-date {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.user-modules-list .more-modules {
+  color: #64748b;
+  font-style: italic;
+  justify-content: center;
+}
+
+.no-modules {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 20px;
+}
+
+.no-user-selected {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+/* Role Badge */
+.role-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.role-badge.admin {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.role-badge.user {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .horizontal-bar-graph-container {
+    flex-direction: column;
+  }
+  
+  .bar-graph-section,
+  .user-details-panel {
+    flex: 1;
+    min-width: 100%;
+  }
+  
+  .user-details-panel {
+    max-height: 300px;
+  }
+}
+
 /* Enhanced Section Styles */
 .admin-section {
   background: white;
