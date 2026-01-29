@@ -62,55 +62,12 @@ router.get('/summary', verifyAdmin, async (req, res) => {
       .from('modules')
       .select('*', { count: 'exact', head: true });
 
-    // Get today's login count (from user_activities with activity_type = 'login')
-    const { count: todayLogins } = await supabase
-      .from('user_activities')
-      .select('*', { count: 'exact', head: true })
-      .eq('activity_type', 'login')
-      .gte('timestamp', startOfDay)
-      .lte('timestamp', endOfDay);
 
-    // Get total activities
-    const { count: totalActivities } = await supabase
-      .from('user_activities')
-      .select('*', { count: 'exact', head: true });
-
-    // Get activity counts by type
-    const { data: activityTypeCounts } = await supabase
-      .from('user_activities')
-      .select('activity_type')
-      .gte('timestamp', startOfDay);
-
-    const activityCounts = {};
-    if (activityTypeCounts) {
-      activityTypeCounts.forEach(activity => {
-        activityCounts[activity.activity_type] = (activityCounts[activity.activity_type] || 0) + 1;
-      });
-    }
-
-    // Get recent login history (last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    const { data: loginHistory } = await supabase
-      .from('user_activities')
-      .select(`
-        timestamp,
-        profiles:user_id (email, fullname)
-      `)
-      .eq('activity_type', 'login')
-      .gte('timestamp', sevenDaysAgo.toISOString())
-      .order('timestamp', { ascending: false })
-      .limit(50);
 
     res.json({
       summary: {
         totalUsers: totalUsers || 0,
-        totalModules: totalModules || 0,
-        todayLogins: todayLogins || 0,
-        totalActivities: totalActivities || 0,
-        activityCounts,
-        loginHistory: loginHistory || []
+        totalModules: totalModules || 0
       }
     });
   } catch (error) {
@@ -373,75 +330,6 @@ router.delete('/modules/:moduleId', verifyAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting module:', error);
     res.status(500).json({ error: 'Failed to delete module: ' + error.message });
-  }
-});
-
-// Get activities with comprehensive details
-router.get('/activities', verifyAdmin, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 100;
-    console.log('DEBUG: Fetching activities with limit:', limit);
-    
-    const { data: activities, error } = await supabase
-      .from('user_activities')
-      .select(`
-        *,
-        profiles:user_id (email, fullname)
-      `)
-      .order('timestamp', { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      console.error('DEBUG: Activity query error:', error);
-      // Table might not exist
-      if (error.code === '42P01') {
-        console.warn('DEBUG: user_activities table does not exist');
-        return res.json({ activities: [] });
-      }
-      return res.status(400).json({ error: error.message });
-    }
-
-    res.json({ activities: activities || [] });
-  } catch (error) {
-    console.error('Error fetching activities:', error);
-    res.status(500).json({ error: 'Failed to fetch activities' });
-  }
-});
-
-// Get today's activities
-router.get('/activities/today', verifyAdmin, async (req, res) => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const startOfDay = new Date(today + 'T00:00:00.000Z').toISOString();
-    const endOfDay = new Date(today + 'T23:59:59.999Z').toISOString();
-
-    const { data: activities, error } = await supabase
-      .from('user_activities')
-      .select(`
-        *,
-        profiles:user_id (email, fullname)
-      `)
-      .gte('timestamp', startOfDay)
-      .lte('timestamp', endOfDay)
-      .order('timestamp', { ascending: false });
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    // Get activity counts by type
-    const activityCounts = {};
-    (activities || []).forEach(activity => {
-      activityCounts[activity.activity_type] = (activityCounts[activity.activity_type] || 0) + 1;
-    });
-
-    res.json({ 
-      activities: activities || [],
-      activityCounts
-    });
-  } catch (error) {
-    console.error('Error fetching today activities:', error);
-    res.status(500).json({ error: 'Failed to fetch today activities' });
   }
 });
 

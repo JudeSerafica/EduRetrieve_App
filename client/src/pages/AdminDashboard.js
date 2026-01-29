@@ -6,8 +6,6 @@ function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [users, setUsers] = useState([]);
   const [modules, setModules] = useState([]);
-  const [activities, setActivities] = useState([]);
-  const [todayActivities, setTodayActivities] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -45,9 +43,7 @@ function AdminDashboard() {
     const endpoints = [
       { name: 'summary', url: '/api/admin/summary' },
       { name: 'users', url: '/api/admin/users' },
-      { name: 'modules', url: '/api/admin/modules' },
-      { name: 'activities', url: '/api/admin/activities?limit=200' },
-      { name: 'todayActivities', url: '/api/admin/activities/today' }
+      { name: 'modules', url: '/api/admin/modules' }
     ];
 
     const results = await Promise.all(
@@ -61,14 +57,10 @@ function AdminDashboard() {
     const summaryData = results[0];
     const usersData = results[1];
     const modulesData = results[2];
-    const activitiesData = results[3];
-    const todayActivitiesData = results[4];
 
     if (summaryData.summary) setSummary(summaryData.summary);
     if (usersData.users) setUsers(usersData.users);
     if (modulesData.modules) setModules(modulesData.modules);
-    if (activitiesData.activities) setActivities(activitiesData.activities);
-    if (todayActivitiesData.activities) setTodayActivities(todayActivitiesData.activities);
 
     fetchAvailableUsers();
 
@@ -689,12 +681,6 @@ function AdminDashboard() {
         >
           📁 Modules ({modules.length})
         </button>
-        <button 
-          className={`admin-tab ${activeTab === 'activities' ? 'active' : ''}`}
-          onClick={() => setActiveTab('activities')}
-        >
-          📝 Activities
-        </button>
       </div>
 
       <div className="admin-content">
@@ -716,69 +702,10 @@ function AdminDashboard() {
                   <p className="stat-number">{summary?.totalModules || 0}</p>
                 </div>
               </div>
-              <div className="admin-stat-card">
-                <div className="stat-icon">🔐</div>
-                <div className="stat-info">
-                  <h3>Today's Logins</h3>
-                  <p className="stat-number">{summary?.todayLogins || 0}</p>
-                </div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="stat-icon">📊</div>
-                <div className="stat-info">
-                  <h3>Total Activities</h3>
-                  <p className="stat-number">{summary?.totalActivities || 0}</p>
-                </div>
-              </div>
+
             </div>
 
-            {/* Today's Activity Breakdown */}
-            <div className="admin-section">
-              <h2>📅 Today's Activity Breakdown</h2>
-              <div className="activity-breakdown">
-                {summary?.activityCounts && Object.keys(summary.activityCounts).length > 0 ? (
-                  Object.entries(summary.activityCounts).map(([type, count]) => (
-                    <div key={type} className="activity-type-item">
-                      <span className="activity-type">
-                        {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                      <span className="activity-count">{count}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="no-data">No activities recorded today</p>
-                )}
-              </div>
-            </div>
 
-            {/* Recent Login History */}
-            <div className="admin-section">
-              <h2>🔐 Recent Login History (Last 7 Days)</h2>
-              <div className="login-history">
-                {summary?.loginHistory && summary.loginHistory.length > 0 ? (
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>User</th>
-                        <th>Email</th>
-                        <th>Timestamp</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.loginHistory.slice(0, 10).map((login, index) => (
-                        <tr key={index}>
-                          <td>{login.profiles?.fullname || 'Unknown'}</td>
-                          <td>{login.profiles?.email || 'N/A'}</td>
-                          <td>{formatRelativeTime(login.timestamp)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="no-data">No login history for this week</p>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
@@ -996,88 +923,6 @@ function AdminDashboard() {
                   <p className="no-data">No modules found</p>
                   <p className="no-data-hint">Try adjusting your search or filters, or create a new module.</p>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'activities' && (
-          <div className="admin-activities">
-            <h2>📝 User Activities</h2>
-            
-            {/* Today's Activities Summary */}
-            <div className="admin-section">
-              <h3>📅 Today's Activities</h3>
-              <div className="activity-breakdown">
-                {todayActivities.length > 0 ? (
-                  Object.entries(
-                    todayActivities.reduce((acc, activity) => {
-                      acc[activity.activity_type] = (acc[activity.activity_type] || 0) + 1;
-                      return acc;
-                    }, {})
-                  ).map(([type, count]) => (
-                    <div key={type} className="activity-type-item">
-                      <span className="activity-type">
-                        {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                      <span className="activity-count">{count}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="no-data">No activities recorded today</p>
-                )}
-              </div>
-            </div>
-
-            {/* All Activities List */}
-            <div className="activities-filter">
-              <button 
-                className="refresh-btn"
-                onClick={() => fetchDashboardData(session.access_token)}
-              >
-                ↻ Refresh Activities
-              </button>
-            </div>
-            <div className="activities-list">
-              {activities.length > 0 ? (
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Activity Type</th>
-                      <th>Details</th>
-                      <th>Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activities.map((activity, index) => (
-                      <tr key={activity.id || index}>
-                        <td>
-                          {activity.profiles?.fullname || activity.profiles?.email || 'Unknown'}
-                          <div className="user-email-small">{activity.profiles?.email || ''}</div>
-                        </td>
-                        <td>
-                          <span className={`activity-type-badge ${activity.activity_type}`}>
-                            {activity.activity_type.replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                        <td className="activity-details">
-                          {activity.details ? (
-                            typeof activity.details === 'string' 
-                              ? activity.details 
-                              : JSON.stringify(activity.details)
-                          ) : '-'}
-                        </td>
-                        <td className="timestamp-cell">
-                          <span className="timestamp-relative">{formatRelativeTime(activity.timestamp)}</span>
-                          <span className="timestamp-absolute">{formatDate(activity.timestamp)}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="no-data">No activities recorded yet</p>
               )}
             </div>
           </div>
