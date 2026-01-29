@@ -95,45 +95,31 @@ function LoginPage() {
           const errorData = await response.json().catch(() => ({}));
           console.log('Admin check error:', errorData);
           
-          // FALLBACK: Check admin status directly from Supabase profile
-          console.log('API failed, checking admin status via Supabase profile...');
-          try {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('role')
-              .eq('id', data.user.id)
-              .single();
-            
-            if (profileData?.role === 'admin') {
-              isAdmin = true;
-              console.log('Fallback: User is admin based on Supabase profile');
-            } else {
-              console.log('Fallback: User is NOT admin, role:', profileData?.role);
-            }
-          } catch (profileErr) {
-            console.error('Error checking profile for admin status:', profileErr);
+          // FALLBACK: Check admin status from session email
+          console.log('API failed, checking admin status via session email...');
+          const userEmail = data.user?.email;
+          console.log('LoginPage: User email:', userEmail);
+          // Check if this is the admin user
+          if (userEmail === 'admin@eduretrieve.com') {
+            isAdmin = true;
+            console.log('Fallback: User is admin based on email');
+          } else {
+            console.log('Fallback: User is NOT admin, email:', userEmail);
           }
         }
       } catch (error) {
         console.error('Error checking admin status:', error);
         
-        // FALLBACK: Check admin status directly from Supabase profile
-        console.log('API call failed, checking admin status via Supabase profile...');
-        try {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', data.user.id)
-            .single();
-          
-          if (profileData?.role === 'admin') {
-            isAdmin = true;
-            console.log('Fallback: User is admin based on Supabase profile');
-          } else {
-            console.log('Fallback: User is NOT admin, role:', profileData?.role);
-          }
-        } catch (profileErr) {
-          console.error('Error checking profile for admin status:', profileErr);
+        // FALLBACK: Check admin status from session email
+        console.log('API call failed, checking admin status via session email...');
+        const userEmail = data.user?.email;
+        console.log('LoginPage: User email:', userEmail);
+        // Check if this is the admin user
+        if (userEmail === 'admin@eduretrieve.com') {
+          isAdmin = true;
+          console.log('Fallback: User is admin based on email');
+        } else {
+          console.log('Fallback: User is NOT admin, email:', userEmail);
         }
       }
 
