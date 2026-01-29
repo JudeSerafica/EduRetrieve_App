@@ -87,7 +87,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/chat', chatRoutes);
 
 // Mount admin routes
+console.log('🔥 Registering admin routes at /api/admin...');
 app.use('/api/admin', adminRoutes);
+console.log('✅ Admin routes registered');
 
 // Test route
 app.get('/api/test', (req, res) => {

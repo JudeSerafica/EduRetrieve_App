@@ -166,6 +166,12 @@ function AdminSettings() {
     setLoading(true);
     try {
       // Use users table with user_id column
+      console.log('DEBUG: Attempting to upsert to users table with:', {
+        user_id: session?.user?.id,
+        full_name: name.trim(),
+        updated_at: new Date().toISOString()
+      });
+      
       const { error } = await supabase
         .from('users')
         .upsert({
@@ -176,6 +182,19 @@ function AdminSettings() {
       
       if (error) {
         console.error('Error saving to users table:', error);
+        // Diagnostic: Check if profiles table exists and has different column name
+        console.log('DEBUG: Checking profiles table as fallback...');
+        const { data: profileCheck, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .limit(1);
+        
+        if (profileError) {
+          console.error('profiles table also failed:', profileError);
+        } else if (profileCheck && profileCheck.length > 0) {
+          console.log('DEBUG: profiles table exists with columns:', Object.keys(profileCheck[0]));
+          console.log('DEBUG: profiles table uses "fullname" not "full_name"');
+        }
         throw error;
       }
       

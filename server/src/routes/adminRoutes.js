@@ -380,6 +380,8 @@ router.delete('/modules/:moduleId', verifyAdmin, async (req, res) => {
 router.get('/activities', verifyAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
+    console.log('DEBUG: Fetching activities with limit:', limit);
+    
     const { data: activities, error } = await supabase
       .from('user_activities')
       .select(`
@@ -390,8 +392,10 @@ router.get('/activities', verifyAdmin, async (req, res) => {
       .limit(limit);
 
     if (error) {
+      console.error('DEBUG: Activity query error:', error);
       // Table might not exist
       if (error.code === '42P01') {
+        console.warn('DEBUG: user_activities table does not exist');
         return res.json({ activities: [] });
       }
       return res.status(400).json({ error: error.message });
@@ -443,42 +447,61 @@ router.get('/activities/today', verifyAdmin, async (req, res) => {
 
 // Check admin status (for any authenticated user)
 router.get('/check', async (req, res) => {
+  console.log('📍 [ADMIN CHECK] Endpoint hit! Method:', req.method, 'URL:', req.originalUrl);
+  console.log('📍 [ADMIN CHECK] Headers:', req.headers.authorization ? 'Bearer token present' : 'No auth header');
   try {
+    console.log('📍 [ADMIN CHECK] Processing request...');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('📍 [ADMIN CHECK] No auth header, returning 401');
       return res.status(401).json({ isAdmin: false, error: 'No authorization header' });
     }
 
     const token = authHeader.split(' ')[1];
+    console.log('📍 [ADMIN CHECK] Token extracted, verifying with Supabase...');
     
     // Verify the user with Supabase Auth
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
+    if (authError) {
+      console.log('📍 [ADMIN CHECK] Auth error:', authError);
+    }
+    if (!user) {
+      console.log('📍 [ADMIN CHECK] No user found');
+    }
+    
     if (authError || !user) {
+      console.log('📍 [ADMIN CHECK] Returning 401 - invalid token');
       return res.status(401).json({ isAdmin: false, error: 'Invalid token' });
     }
 
-    console.log('Checking admin status for user:', user.id, user.email);
+    console.log('📍 [ADMIN CHECK] User verified:', user.id, user.email);
+    console.log('📍 [ADMIN CHECK] Checking admin status for user:', user.id, user.email);
 
     // Check if user has admin role
+    console.log('📍 [ADMIN CHECK] Querying profiles table for user:', user.id);
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('role, email, fullname')
       .eq('id', user.id)
       .single();
 
+    console.log('📍 [ADMIN CHECK] Profile query result:', profile, 'Error:', profileError);
+
     if (profileError) {
       // Profile might not exist, treat as non-admin
-      console.warn('Profile not found for user:', user.id, profileError);
+      console.warn('📍 [ADMIN CHECK] Profile not found for user:', user.id, profileError);
+      console.log('📍 [ADMIN CHECK] Returning isAdmin: false - profile not found');
       return res.json({ isAdmin: false, error: 'Profile not found' });
     }
 
-    console.log('User profile:', profile);
+    console.log('📍 [ADMIN CHECK] User profile:', profile);
     const isAdmin = profile && profile.role === 'admin';
-    console.log('Is admin:', isAdmin, 'Role:', profile?.role);
+    console.log('📍 [ADMIN CHECK] Is admin:', isAdmin, 'Role:', profile?.role);
+    console.log('📍 [ADMIN CHECK] Returning response with isAdmin:', isAdmin);
     res.json({ isAdmin, role: profile?.role });
   } catch (error) {
-    console.error('Admin check error:', error);
+    console.error('📍 [ADMIN CHECK] ERROR:', error.message, error.stack);
     res.status(500).json({ isAdmin: false, error: 'Internal server error' });
   }
 });
