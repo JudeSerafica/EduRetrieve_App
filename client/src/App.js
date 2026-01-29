@@ -196,8 +196,6 @@ function AuthWrapper() {
       } else {
         console.log('App: Auth state change - user logged out');
       }
-
-      checkAuth();
     });
 
     return () => {
