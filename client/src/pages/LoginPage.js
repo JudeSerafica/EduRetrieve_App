@@ -94,9 +94,47 @@ function LoginPage() {
         } else {
           const errorData = await response.json().catch(() => ({}));
           console.log('Admin check error:', errorData);
+          
+          // FALLBACK: Check admin status directly from Supabase profile
+          console.log('API failed, checking admin status via Supabase profile...');
+          try {
+            const { data: profileData, error: profileError } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', data.user.id)
+              .single();
+            
+            if (profileData?.role === 'admin') {
+              isAdmin = true;
+              console.log('Fallback: User is admin based on Supabase profile');
+            } else {
+              console.log('Fallback: User is NOT admin, role:', profileData?.role);
+            }
+          } catch (profileErr) {
+            console.error('Error checking profile for admin status:', profileErr);
+          }
         }
       } catch (error) {
         console.error('Error checking admin status:', error);
+        
+        // FALLBACK: Check admin status directly from Supabase profile
+        console.log('API call failed, checking admin status via Supabase profile...');
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.user.id)
+            .single();
+          
+          if (profileData?.role === 'admin') {
+            isAdmin = true;
+            console.log('Fallback: User is admin based on Supabase profile');
+          } else {
+            console.log('Fallback: User is NOT admin, role:', profileData?.role);
+          }
+        } catch (profileErr) {
+          console.error('Error checking profile for admin status:', profileErr);
+        }
       }
 
       console.log('Final isAdmin:', isAdmin, 'User ID:', data.user.id, 'Email:', data.user.email);
